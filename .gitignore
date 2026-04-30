@@ -1,0 +1,35 @@
+# Python
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+
+# Node
+node_modules/
+dist/
+build/
+.eslintcache
+
+# Project Specific - Large Model Files/Media
+*.wav
+*.pth
+*.index
+memori_bocchi.json
+testing/
+finetune/
+
+# Secrets
+credentials.json
+token.json
+.env
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+Desktop.ini

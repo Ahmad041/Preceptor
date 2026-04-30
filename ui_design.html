@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Ethereal Dreams - Main Menu</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=Manrope:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface": "#faf9fa",
+                        "primary-container": "#f06292",
+                        "primary-fixed": "#ffd9e1",
+                        "on-tertiary-container": "#471f30",
+                        "on-error": "#ffffff",
+                        "secondary-container": "#a2c5fe",
+                        "on-secondary-fixed-variant": "#214779",
+                        "tertiary-container": "#bb8498",
+                        "surface-container": "#eeedee",
+                        "secondary-fixed-dim": "#a7c8ff",
+                        "inverse-primary": "#ffb1c5",
+                        "on-primary-fixed-variant": "#8b0e45",
+                        "surface-container-low": "#f4f3f4",
+                        "secondary-fixed": "#d5e3ff",
+                        "on-secondary-fixed": "#001c3b",
+                        "on-secondary-container": "#2c5183",
+                        "tertiary-fixed": "#ffd9e4",
+                        "on-surface": "#1a1c1d",
+                        "error": "#ba1a1a",
+                        "on-primary": "#ffffff",
+                        "on-secondary": "#ffffff",
+                        "inverse-on-surface": "#f1f0f1",
+                        "tertiary-fixed-dim": "#f2b6cb",
+                        "surface-variant": "#e3e2e3",
+                        "tertiary": "#805062",
+                        "on-primary-fixed": "#3f001b",
+                        "primary": "#ab2c5d",
+                        "surface-container-highest": "#e3e2e3",
+                        "surface-tint": "#ab2c5d",
+                        "inverse-surface": "#2f3032",
+                        "outline-variant": "#ddbfc5",
+                        "on-tertiary-fixed": "#330f1f",
+                        "error-container": "#ffdad6",
+                        "on-primary-container": "#5e002b",
+                        "on-tertiary": "#ffffff",
+                        "secondary": "#3b5f92",
+                        "outline": "#8a7176",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-container-high": "#e9e8e9",
+                        "on-error-container": "#93000a",
+                        "primary-fixed-dim": "#ffb1c5",
+                        "on-surface-variant": "#574146",
+                        "surface-bright": "#faf9fa",
+                        "on-tertiary-fixed-variant": "#65394b",
+                        "on-background": "#1a1c1d",
+                        "background": "#faf9fa",
+                        "surface-dim": "#dadadb"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                    "fontFamily": {
+                        "headline": ["Plus Jakarta Sans"],
+                        "body": ["Manrope"],
+                        "label": ["Manrope"]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .bg-ethereal-gradient {
+            background: linear-gradient(135deg, #faf9fa 0%, #ffd9e1 100%);
+        }
+        .text-glow {
+            text-shadow: 0 0 20px rgba(240, 98, 146, 0.4);
+        }
+        .glass-panel {
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+        }
+    </style>
+</head>
+<body class="bg-surface font-body text-on-surface overflow-hidden">
+<!-- Background Layer -->
+<div class="fixed inset-0 z-0 h-full w-full">
+<img class="absolute inset-0 h-full w-full object-cover opacity-60" data-alt="Soft ethereal background of Japanese cherry blossoms in full bloom with gentle sunlight filtering through pink petals and a dreamy bokeh effect" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCrAH5Fh-2O7UDp2U4tnbUEKqICnx6sFEq_4KTGRgz55etZdchh7SaKjC_D1dhRG6Lp0pwcgI4mu538w1XcHBcV26bgfu8R399a9e7aehd6yjJagyRo8ikG6Om8JxPFQ9L0ysaTZtDdST7iR2DA3mtVvCFckHd9swM6dPs6kEFheB3Y04F54o-c5ArTgQQUcBOur_kM2zEp-BObf2G-6T75MC-Vt6umRzMAmzBT8L4fWxMvBkI95F_DUjYFsqKZDDuPBLeX8YAfFOUF"/>
+<div class="absolute inset-0 bg-gradient-to-r from-surface via-transparent to-transparent"></div>
+</div>
+<!-- Floating Decorative Petals (Symbolic Overlay) -->
+<div class="fixed inset-0 z-10 pointer-events-none opacity-40">
+<div class="absolute top-10 left-1/4 w-4 h-4 bg-primary-fixed rounded-full blur-xl"></div>
+<div class="absolute bottom-1/4 right-1/3 w-8 h-8 bg-secondary-fixed rounded-full blur-2xl"></div>
+<div class="absolute top-1/2 left-1/2 w-6 h-6 bg-tertiary-fixed rounded-full blur-xl"></div>
+</div>
+<!-- Top Navigation Bar (JSON Shell Execution) -->
+<header class="fixed top-0 right-0 w-full flex justify-end items-center px-8 h-20 z-40 bg-transparent">
+<div class="flex items-center gap-6">
+<button class="flex items-center gap-2 group hover:opacity-80 transition-opacity">
+<span class="material-symbols-outlined text-rose-500" data-icon="favorite">favorite</span>
+<span class="font-headline text-sm tracking-widest uppercase font-bold text-rose-600">Favorites</span>
+</button>
+<button class="flex items-center gap-2 group hover:opacity-80 transition-opacity">
+<span class="material-symbols-outlined text-rose-500" data-icon="tempest">storm</span>
+<span class="font-headline text-sm tracking-widest uppercase font-bold text-rose-600">Events</span>
+</button>
+</div>
+</header>
+<main class="relative z-20 flex h-screen w-full items-center justify-between">
+<!-- Sidebar Navigation (JSON Shell Execution) -->
+<nav class="fixed left-0 top-0 h-full flex flex-col py-8 px-6 bg-white/70 backdrop-blur-xl h-screen w-72 rounded-r-[3rem] shadow-[0_0_40px_rgba(240,98,146,0.06)]">
+<!-- Header Section -->
+<div class="mb-12 flex flex-col items-center text-center">
+<div class="relative w-20 h-20 mb-4 rounded-full p-1 bg-gradient-to-br from-primary to-secondary">
+<img alt="Pink-haired romance protagonist" class="w-full h-full rounded-full object-cover bg-surface-container" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBl3kKHQFsqnabzif44q3B4PHhCrc4_oMZXUc_BFCUsbVUd_zOg1vOZQs3XFXioPEbLBFleNkY3lJ5FsGmk4dCd0ezUsAxgrTTJzAvy1POHg4T9d-t3nZahkeLitcDsIAApZ_QNp3gsBnnwC4J_d-fwGElnoD0nT6OSkeE1rDZnN0NI6bEp3OXDQ79finPtPAPJoxSde9LUZeGQ8zkRUsOxfJjf8vz8Nujnwk9cDxIzfyuKEz-WbDLGwFvx373WPaxWrtpLQIHeiWUK"/>
+</div>
+<h1 class="text-2xl font-bold tracking-tighter text-rose-600 font-headline">Ethereal Dreams</h1>
+<p class="text-[10px] uppercase tracking-[0.2em] font-bold text-zinc-500 mt-1">Chapter 4: The Whispering Wind</p>
+</div>
+<!-- Navigation Tabs -->
+<div class="flex flex-col gap-2 flex-grow">
+<!-- Tab: Continue (Active) -->
+<a class="flex items-center gap-4 py-4 px-6 transition-all duration-300 text-rose-600 font-extrabold border-r-4 border-rose-500 hover:bg-rose-50/50" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="play_arrow">play_arrow</span>
+<span class="font-['Plus_Jakarta_Sans'] tracking-widest uppercase text-xs font-bold">Continue</span>
+</a>
+<!-- Tab: New Story -->
+<a class="flex items-center gap-4 py-4 px-6 transition-all duration-300 text-zinc-500 font-medium hover:bg-rose-50/50" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="auto_stories">auto_stories</span>
+<span class="font-['Plus_Jakarta_Sans'] tracking-widest uppercase text-xs font-bold">New Story</span>
+</a>
+<!-- Tab: Memories -->
+<a class="flex items-center gap-4 py-4 px-6 transition-all duration-300 text-zinc-500 font-medium hover:bg-rose-50/50" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="auto_awesome">auto_awesome</span>
+<span class="font-['Plus_Jakarta_Sans'] tracking-widest uppercase text-xs font-bold">Memories</span>
+</a>
+<!-- Tab: Wardrobe -->
+<a class="flex items-center gap-4 py-4 px-6 transition-all duration-300 text-zinc-500 font-medium hover:bg-rose-50/50" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="apparel">apparel</span>
+<span class="font-['Plus_Jakarta_Sans'] tracking-widest uppercase text-xs font-bold">Wardrobe</span>
+</a>
+<!-- Tab: Settings -->
+<a class="flex items-center gap-4 py-4 px-6 transition-all duration-300 text-zinc-500 font-medium hover:bg-rose-50/50" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="settings">settings</span>
+<span class="font-['Plus_Jakarta_Sans'] tracking-widest uppercase text-xs font-bold">Settings</span>
+</a>
+</div>
+<!-- CTA Section -->
+</nav>
+<!-- Main Content Area (Prominent Character Placement) -->
+<div class="ml-72 flex-grow h-full flex items-end justify-end relative overflow-hidden">
+<!-- Character Image Rendering -->
+<div class="relative h-[110%] w-auto max-w-[60%] flex items-end translate-y-12 translate-x-12">
+<img class="h-full object-contain drop-shadow-[0_20px_50px_rgba(171,44,93,0.3)]" data-alt="Close-up portrait of a beautiful romance visual novel character with flowing hair and expressive eyes, illuminated by soft cinematic lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC3CkL5EhzmqCEuK8UrlF922qojOidseaGSAqYE0Ws2z9Ti4A1uTScTkp5TBnHg2K7C5zeHHEc4sZ6M9cVS-AagAayfmiqQ6ydcNqYEWpF16GX_YupxWOJpO3uWPze-PQKrgX-c7G6UwZncBFq4yjKggaWhFPiRjzCcULb9vOdOMMGZiIt-KoWvmyLua99TKGm2VUS8SjOcLXWc6Y0yKimlf-Nq2LbB3RCjNfm08i4fMEqdT4KGrXdi-0r_9oP6Y3Eyd8m_pMji8ag7"/>
+</div>
+<!-- Floating Context Card -->
+<div class="absolute bottom-24 left-12 max-w-md p-10 bg-white/40 backdrop-blur-2xl rounded-xl shadow-2xl border border-white/20">
+<div class="space-y-4">
+<div class="inline-flex px-3 py-1 bg-primary-fixed text-on-primary-fixed text-[10px] font-bold uppercase tracking-widest rounded-full">
+                        Latest Update
+                    </div>
+<h2 class="text-4xl font-headline font-extrabold text-on-surface leading-tight">Return to the <br/><span class="text-primary italic">Everlasting Garden</span></h2>
+<p class="text-on-surface-variant font-medium leading-relaxed">The whispers in the wind are growing louder. Will you find the truth before the last petal falls?</p>
+<div class="pt-4 flex gap-4">
+<button class="flex-1 py-4 rounded-full bg-primary text-white font-bold text-sm tracking-wide shadow-xl shadow-primary/25 hover:bg-primary-container transition-colors">
+                            Resume Chapter
+                        </button>
+<button class="px-6 py-4 rounded-full bg-secondary-container text-on-secondary-container font-bold text-sm hover:bg-secondary-fixed transition-colors">
+<span class="material-symbols-outlined align-middle" data-icon="share">share</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Bottom Detail: Dreamy Gradient Overlay -->
+<div class="fixed bottom-0 right-0 w-1/2 h-64 bg-gradient-to-t from-primary-fixed/20 to-transparent pointer-events-none z-10"></div>
+</body></html>
