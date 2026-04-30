@@ -1,31 +1,31 @@
 # Preceptor (Bocchi AI Desktop Assistant) 🎸
 
-> An interactive AI desktop assistant themed after Bocchi the Rock. Features RVC voice integration for lifelike communication, a Visual Novel-style Story Mode powered by local LLMs (Ollama), and intelligent hybrid Q&A logic. Designed to deliver an immersive and responsive character roleplay experience directly on your Windows desktop.
+> Asisten desktop AI bertema Bocchi the Rock yang interaktif. Menghadirkan komunikasi hidup dengan integrasi suara RVC, fitur Story Mode ala Visual Novel yang digerakkan oleh LLM lokal (Ollama), serta sistem Hybrid Q&A cerdas. Dirancang untuk pengalaman roleplay yang mendalam, responsif, dan personal langsung dari desktop Windows kamu.
 
-## ✨ Features
+## ✨ Fitur Utama
 
-- **🗣️ Interactive Character AI**: Roleplay and chat naturally with a Bocchi-themed assistant.
-- **🎙️ Voice Synthesis (RVC)**: Lifelike voice responses using Retrieval-based Voice Conversion for maximum immersion.
-- **📖 Visual Novel Story Mode**: Upload any document and the AI will automatically generate a visual novel-style interactive story based on the content.
-- **🧠 Local LLM Powered**: Runs completely locally using **Ollama (Qwen)** for fast, private, and offline AI processing.
-- **🔍 Hybrid Q&A Logic**: Smart contextual logic for answering questions efficiently.
+- **🗣️ AI Karakter Interaktif**: Ngobrol dan bermain peran (roleplay) secara natural dengan asisten bertema Bocchi.
+- **🎙️ Sintesis Suara (RVC)**: Respons suara yang terasa nyata menggunakan *Retrieval-based Voice Conversion* (RVC) untuk pengalaman yang lebih hidup.
+- **📖 Story Mode (Visual Novel)**: Unggah dokumen apa saja, dan AI akan otomatis membuat cerita interaktif bergaya visual novel berdasarkan konten dokumen tersebut.
+- **🧠 Digerakkan oleh LLM Lokal**: Berjalan sepenuhnya secara lokal menggunakan **Ollama (Qwen)** untuk pemrosesan AI yang cepat, privat, dan bisa digunakan tanpa internet (offline).
+- **🔍 Logika Hybrid Q&A**: Logika kontekstual pintar untuk menjawab pertanyaan secara responsif dan efisien.
 
-## 🛠️ Tech Stack
+## 🛠️ Teknologi yang Digunakan
 
 - **Backend**: Python, FastAPI
 - **Frontend**: React, Vite, Tailwind CSS
 - **AI & ML**: Ollama (Qwen 3.5), RVC (Retrieval-based Voice Conversion)
 
-## 🚀 Getting Started
+## 🚀 Cara Menjalankan
 
-### Prerequisites
+### Prasyarat
 - Python 3.10+
 - Node.js & npm
-- [Ollama](https://ollama.com/) installed and running locally
+- [Ollama](https://ollama.com/) sudah terinstal dan berjalan secara lokal.
 
-### Installation
+### Instalasi
 
-1. **Clone the repository:**
+1. **Clone repository ini:**
    ```bash
    git clone https://github.com/Ahmad041/Preceptor.git
    cd Preceptor
@@ -33,11 +33,11 @@
 
 2. **Setup Backend:**
    ```bash
-   # Create and activate a virtual environment
+   # Buat dan aktifkan virtual environment
    python -m venv venv
-   venv\Scripts\activate  # On Windows
+   venv\Scripts\activate  # Untuk pengguna Windows
 
-   # Install dependencies (ensure you have a requirements.txt, or install FastAPI, Uvicorn, etc. manually)
+   # Instal dependensi (pastikan menginstal library yang dibutuhkan seperti FastAPI, Uvicorn, dll)
    pip install fastapi uvicorn python-multipart
    ```
 
@@ -47,22 +47,22 @@
    npm install
    ```
 
-### Running the App
+### Menjalankan Aplikasi
 
-1. **Start the Backend Server:**
+1. **Jalankan Server Backend:**
    ```bash
-   # From the root directory
+   # Dari direktori utama (root)
    uvicorn main:app --reload
    ```
 
-2. **Start the Frontend Development Server:**
+2. **Jalankan Server Frontend:**
    ```bash
-   # From the frontend directory
+   # Dari direktori frontend
    npm run dev
    ```
 
-## 📝 Note on Large Files
-Due to GitHub's file size limits, large AI models (`.pth`, `.index` for RVC) and audio files are not included in this repository. You will need to provide your own RVC models and place them in the appropriate directory to enable the voice features.
+## 📝 Catatan Tentang File Berukuran Besar
+Karena batasan ukuran file di GitHub, file model AI yang besar (`.pth`, `.index` untuk RVC) dan file audio tidak disertakan dalam repository ini. Kamu perlu menyiapkan model RVC kamu sendiri dan menempatkannya di direktori yang sesuai agar fitur suara dapat berfungsi.
 
-## 📄 License
-This project is created for educational and personal use.
+## 📄 Lisensi
+Proyek ini dibuat untuk tujuan edukasi dan penggunaan pribadi.
