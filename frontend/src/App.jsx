@@ -6,6 +6,8 @@ import BocchiAvatar from './BocchiAvatar'
 import MainMenu from './MainMenu'
 import StoryUpload from './StoryUpload'
 import StoryPlayer from './StoryPlayer'
+import StoryLibrary from './StoryLibrary'
+import QuizStory from './QuizStory'
 import './App.css'
 
 function App() {
@@ -321,11 +323,26 @@ function App() {
       setUserProfile(profile);
       setSelectedMode(mode);
       if (mode === 'story') {
-        setScreen('story_upload');
+        setScreen('story_library');
       } else {
         setScreen('chat');
       }
     }} />;
+  }
+
+  if (screen === 'story_library') {
+    return <StoryLibrary
+      onBack={() => setScreen('menu')}
+      onUploadClick={() => setScreen('story_upload')}
+      onPlayChapter={(chap) => {
+        setStoryData(chap);
+        setScreen('story_play');
+      }}
+      onQuizClick={(group) => {
+        setStoryData(group);
+        setScreen('quiz_story');
+      }}
+    />;
   }
 
   if (screen === 'story_upload') {
@@ -333,9 +350,41 @@ function App() {
       onGenerated={(data, profile) => {
         setStoryData(data);
         setUserProfile(profile);
+        
+        // Save to group based on backend classification
+        const savedGroups = JSON.parse(localStorage.getItem('story_groups') || '[]');
+        if (data.is_new_group) {
+          const newGroup = {
+            id: Date.now().toString(),
+            title: data.judul || 'New Story Group',
+            chapters: data.tipe === 'chapter' ? [data] : [],
+            ovas: data.tipe === 'ova' ? [data] : []
+          };
+          savedGroups.push(newGroup);
+        } else {
+          const groupIndex = savedGroups.findIndex(g => g.id === data.group_id);
+          if (groupIndex !== -1) {
+            if (data.tipe === 'ova') {
+              savedGroups[groupIndex].ovas.push(data);
+            } else {
+              savedGroups[groupIndex].chapters.push(data);
+            }
+          } else {
+            // Fallback if group_id not found
+            const newGroup = {
+              id: Date.now().toString(),
+              title: data.judul || 'New Story Group',
+              chapters: [data],
+              ovas: []
+            };
+            savedGroups.push(newGroup);
+          }
+        }
+        localStorage.setItem('story_groups', JSON.stringify(savedGroups));
+        
         setScreen('story_play');
       }}
-      onBack={() => setScreen('menu')}
+      onBack={() => setScreen('story_library')}
     />;
   }
 
@@ -346,7 +395,17 @@ function App() {
       storyMeta={{ filename: storyData.filename, judul: storyData.judul }}
       onBack={() => {
         setStoryData(null);
-        setScreen('menu');
+        setScreen('story_library');
+      }}
+    />;
+  }
+
+  if (screen === 'quiz_story' && storyData) {
+    return <QuizStory
+      group={storyData}
+      onBack={() => {
+        setStoryData(null);
+        setScreen('story_library');
       }}
     />;
   }

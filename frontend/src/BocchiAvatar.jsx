@@ -250,7 +250,7 @@ const Model = ({ analyzerNode, emosi = 'idle' }) => {
 // ============================================================
 // KOMPONEN WRAPPER — Handle Audio Playback + AnalyserNode
 // ============================================================
-export default function BocchiAvatar({ audioBase64, emosi = 'idle' }) {
+export default function BocchiAvatar({ audioBase64, audioUrl, emosi = 'idle', onFinishedPlaying }) {
   const [analyzerNode, setAnalyzerNode] = useState(null);
   const audioContextRef = useRef(null);
   const sourceNodeRef = useRef(null);
@@ -276,7 +276,7 @@ export default function BocchiAvatar({ audioBase64, emosi = 'idle' }) {
 
   // Setiap kali ada audio baru dari backend, decode & putar
   useEffect(() => {
-    if (!audioBase64) return;
+    if (!audioBase64 && !audioUrl) return;
     
     const playAudio = async () => {
       try {
@@ -292,15 +292,23 @@ export default function BocchiAvatar({ audioBase64, emosi = 'idle' }) {
           try { sourceNodeRef.current.stop(); } catch(e) {}
         }
         
-        // 1. Decode base64 → ArrayBuffer
-        const binaryString = atob(audioBase64);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
+        let audioBuffer;
         
-        // 2. Decode audio data
-        const audioBuffer = await ctx.decodeAudioData(bytes.buffer);
+        if (audioUrl) {
+          const response = await fetch(`http://localhost:8000${audioUrl}`);
+          const arrayBuffer = await response.arrayBuffer();
+          audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+        } else if (audioBase64) {
+          // 1. Decode base64 → ArrayBuffer
+          const binaryString = atob(audioBase64);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          
+          // 2. Decode audio data
+          audioBuffer = await ctx.decodeAudioData(bytes.buffer);
+        }
         
         // 3. Buat source node baru
         const source = ctx.createBufferSource();
@@ -320,6 +328,7 @@ export default function BocchiAvatar({ audioBase64, emosi = 'idle' }) {
         source.onended = () => {
           console.log('[LipSync] Audio selesai.');
           sourceNodeRef.current = null;
+          if (onFinishedPlaying) onFinishedPlaying();
         };
         
       } catch (err) {
@@ -328,7 +337,7 @@ export default function BocchiAvatar({ audioBase64, emosi = 'idle' }) {
     };
     
     playAudio();
-  }, [audioBase64, getAudioContext]);
+  }, [audioBase64, audioUrl, getAudioContext, onFinishedPlaying]);
 
   return (
     <div style={{ height: '100%', width: '100%', background: 'transparent' }}>

@@ -1,4 +1,5 @@
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
@@ -52,6 +53,10 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "Qwen3-TTS"))
 
 app = FastAPI()
+
+# Setup direktori cache audio
+AUDIO_CACHE_DIR = os.path.join(os.getcwd(), "data", "audio_cache")
+os.makedirs(AUDIO_CACHE_DIR, exist_ok=True)
 
 app.add_middleware(
     CORSMiddleware,
@@ -799,6 +804,92 @@ def potong_teks_untuk_story(teks: str, chunk_size=STORY_CHUNK_SIZE) -> List[str]
     return chunks if chunks else [teks.strip()]
 
 
+def classify_story_document(filename: str, teks: str, existing_groups_json: str) -> dict:
+    """Mengklasifikasikan apakah dokumen adalah chapter baru, OVA, atau grup baru."""
+    default_title = filename.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ').title()
+    
+    if not existing_groups_json or existing_groups_json == "[]" or existing_groups_json == "null":
+        return {
+            "group_title": default_title,
+            "tipe": "chapter",
+            "is_new_group": True,
+            "group_id": None
+        }
+    
+    try:
+        groups = json.loads(existing_groups_json)
+        groups_info = ""
+        for g in groups:
+            chapters = ", ".join([c.get("judul", "") for c in g.get("chapters", [])])
+            groups_info += f"- Group ID: {g.get('id', '')}, Judul: {g.get('judul', '')}, Chapters: [{chapters}]\n"
+            
+        prompt = f"""Kamu adalah asisten pengelola perpustakaan pembelajaran.
+Tugasmu adalah menentukan apakah dokumen baru ini berkaitan dengan salah satu grup dokumen yang sudah ada, atau topik baru.
+
+Aturan klasifikasi:
+1. Jika materi dokumen baru ini adalah kelanjutan materi utama dari salah satu grup yang ada, tipe="chapter" dan is_new_group=false.
+2. Jika materi dokumen baru ini berisi tips/trik/tambahan terkait suatu grup tapi BUKAN materi utama yang terhubung langsung, tipe="ova" dan is_new_group=false.
+3. Jika materi tidak berkaitan sama sekali dengan grup manapun, is_new_group=true dan tipe="chapter".
+
+Dokumen Baru:
+- Nama file: {filename}
+- Cuplikan isi: {teks[:1500]}
+
+Grup yang sudah ada:
+{groups_info}
+
+Berikan output HANYA dalam format JSON valid tanpa tag markdown.
+Contoh jika masuk grup yang ada:
+{{"is_new_group": false, "group_id": "171000000", "tipe": "chapter", "group_title": ""}}
+Contoh jika OVA:
+{{"is_new_group": false, "group_id": "171000000", "tipe": "ova", "group_title": ""}}
+Contoh jika grup baru:
+{{"is_new_group": true, "group_id": null, "tipe": "chapter", "group_title": "Judul Grup Baru"}}
+"""
+        response = requests.post(
+            os_tools.OLLAMA_URL,
+            json={
+                "model": os_tools.MODEL_NAME,
+                "prompt": prompt,
+                "system": "Output HANYA JSON valid.",
+                "format": "json",
+                "stream": False,
+                "options": {
+                    "temperature": 0.2,
+                }
+            },
+            timeout=30
+        )
+        response.raise_for_status()
+        data = response.json()
+        
+        resp_text = data.get("thinking", "").strip()
+        if not resp_text:
+            resp_text = data.get("response", "").strip()
+        else:
+            resp_text = data.get("response", "").strip()
+            
+        if "{" in resp_text and "}" in resp_text:
+            resp_text = "{" + resp_text.split("{", 1)[1]
+            resp_text = resp_text.rsplit("}", 1)[0] + "}"
+            
+        parsed = json.loads(resp_text)
+        return {
+            "is_new_group": parsed.get("is_new_group", True),
+            "group_id": parsed.get("group_id"),
+            "tipe": parsed.get("tipe", "chapter").lower(),
+            "group_title": parsed.get("group_title", default_title)
+        }
+    except Exception as e:
+        print(f"[CLASSIFY ERROR] {e}")
+        return {
+            "group_title": default_title,
+            "tipe": "chapter",
+            "is_new_group": True,
+            "group_id": None
+        }
+
+
 def generate_scenes_from_chunk(chunk_text: str, chunk_index: int, total_chunks: int, user_nama: str = "Senpai") -> List[dict]:
     """Menggunakan Ollama lokal untuk mengubah satu chunk teks menjadi scene VN."""
     os_tools.ensure_ollama_running()
@@ -918,6 +1009,7 @@ async def generate_story(
     file: UploadFile = File(...),
     user_nama: str = Form("Senpai"),
     user_hubungan: str = Form("Teman"),
+    existing_groups: Optional[str] = Form(None)
 ):
     """Upload dokumen → parse → chunk → generate VN scenes via Ollama lokal"""
     try:
@@ -971,15 +1063,45 @@ async def generate_story(
                     "embedding": emb[0]
                 })
         
-        print(f"[STORY] ✅ Selesai! Total {len(final_scenes)} scenes generated")
+        # 6. Klasifikasi Grup / Chapter / OVA
+        classification = classify_story_document(file.filename, teks, existing_groups)
+        print(f"[STORY] Classification: {classification}")
+        
+        # 7. Generate Audio secara berurutan setelah teks selesai
+        print(f"[STORY] Mulai pre-generation audio untuk {len(final_scenes)} scene...")
+        for i, scene in enumerate(final_scenes):
+            try:
+                teks_dialog = scene.get("dialog", "")
+                if teks_dialog and QWEN_TTS_MODEL and QWEN_TTS_MODEL != "fallback":
+                    print(f"  -> Generating audio {i+1}/{len(final_scenes)}...")
+                    ref_audio = REFERENSI_SUARA if os.path.exists(REFERENSI_SUARA) else None
+                    wavs, sample_rate = QWEN_TTS_MODEL.generate_voice_clone(
+                        text=teks_dialog,
+                        ref_audio=ref_audio,
+                        x_vector_only_mode=True,
+                        language="Auto",
+                    )
+                    
+                    audio_filename = f"story_{int(time.time())}_{i}.wav"
+                    audio_path = os.path.join(AUDIO_CACHE_DIR, audio_filename)
+                    sf.write(audio_path, wavs[0], sample_rate)
+                    
+                    scene["audio_url"] = f"/api/audio/{audio_filename}"
+            except Exception as e:
+                print(f"  -> [WARNING] Gagal generate audio scene {i+1}: {e}")
+                scene["audio_url"] = None
+
+        print(f"[STORY] ✅ Selesai! Total {len(final_scenes)} scenes generated beserta audio")
         
         return {
             "status": "berhasil",
             "filename": file.filename,
             "total_scenes": len(final_scenes),
             "scenes": final_scenes,
-            "tipe": "chapter",
-            "judul": file.filename.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ').title()
+            "tipe": classification.get("tipe", "chapter"),
+            "judul": classification.get("group_title", file.filename.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ').title()),
+            "is_new_group": classification.get("is_new_group", True),
+            "group_id": classification.get("group_id")
         }
         
     except Exception as e:
@@ -1140,3 +1262,79 @@ async def story_tts(data: dict):
     except Exception as e:
         print(f"[STORY TTS ERROR] {e}")
         return {"audio_base64": None}
+
+
+@app.get("/api/audio/{filename}")
+async def get_audio(filename: str):
+    """Mengambil file audio dari cache"""
+    file_path = os.path.join(AUDIO_CACHE_DIR, filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Audio file not found")
+    return FileResponse(file_path, media_type="audio/wav")
+
+
+class QuizGenerateRequest(BaseModel):
+    materi_konten: str
+    user_nama: str = "Senpai"
+
+@app.post("/api/story/generate-quiz")
+async def generate_quiz(data: QuizGenerateRequest):
+    """Generate 10 soal quiz berdasarkan konten materi chapter/ova."""
+    try:
+        print(f"[STORY QUIZ] Generate quiz untuk {data.user_nama}...")
+        
+        # Batasi agar tidak OOM
+        konten_aman = data.materi_konten[:8000]
+        
+        prompt = f"""Kamu adalah pembuat soal ujian yang ahli sekaligus penulis dialog karakter "Bocchi" (gadis introvert, gugup, sering menggunakan "u-um...", "e-eh").
+Buatlah tepat 10 soal pilihan ganda berdasarkan materi berikut.
+
+MATERI:
+{konten_aman}
+
+Instruksi tambahan:
+- Setiap soal harus memiliki dialog Bocchi yang lucu/gugup saat melihat soal tersebut (seolah dia sedang ikut ujian di sebelah {data.user_nama}).
+- Emosi Bocchi bisa "Neutral", "Joy", "Surprised", atau "Sorrow" (jika soalnya dirasa susah).
+- Output WAJIB JSON yang valid tanpa markdown formatting.
+
+Format respons JSON:
+{{
+  "judul": "Ujian Bareng Bocchi",
+  "questions": [
+    {{
+      "soal": "Pertanyaan...",
+      "opsi": ["Opsi A", "Opsi B", "Opsi C", "Opsi D"],
+      "jawaban_benar": 1, 
+      "dialog_bocchi": "U-um... soal ini susah banget... S-Senpai tahu jawabannya?",
+      "emosi_bocchi": "Sorrow"
+    }}
+  ]
+}}
+*Ingat jawaban_benar adalah index 0 sampai 3 sesuai array opsi. Pastikan ada persis 10 soal.*"""
+
+        response = requests.post(
+            os_tools.OLLAMA_URL,
+            json={
+                "model": os_tools.MODEL_NAME,
+                "prompt": prompt,
+                "format": "json",
+                "stream": False,
+                "options": {"temperature": 0.7, "num_predict": 3000}
+            },
+            timeout=240
+        )
+        response.raise_for_status()
+        result = response.json()
+        resp_text = result.get("thinking", "") or result.get("response", "")
+        resp_text = resp_text.strip()
+        
+        if resp_text.startswith("```"): resp_text = resp_text.split("```")[1] if "```" in resp_text[3:] else resp_text[3:]
+        if resp_text.endswith("```"): resp_text = resp_text[:-3]
+        resp_text = resp_text.replace("json", "", 1).strip() if resp_text.startswith("json") else resp_text
+        
+        parsed = json.loads(resp_text)
+        return {"status": "berhasil", "data": parsed}
+        
+    except Exception as e:
+        print(f"[STORY QUIZ ERROR] {e}")
+        return {"status": "gagal", "pesan": str(e)}

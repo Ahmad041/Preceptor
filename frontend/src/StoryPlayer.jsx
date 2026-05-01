@@ -9,6 +9,7 @@ export default function StoryPlayer({ scenes, userProfile, storyMeta, onBack }) 
   const [displayedText, setDisplayedText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [audioBase64, setAudioBase64] = useState(null);
+  const [audioUrl, setAudioUrl] = useState(null);
   const [showNotes, setShowNotes] = useState(false);
   const [showAskInput, setShowAskInput] = useState(false);
   const [askText, setAskText] = useState('');
@@ -80,16 +81,27 @@ export default function StoryPlayer({ scenes, userProfile, storyMeta, onBack }) 
   // Generate TTS for current scene
   useEffect(() => {
     if (!scene.dialog) return;
+    
+    // Jika sudah pre-generated, gunakan URL langsung
+    if (scene.audio_url) {
+      setAudioUrl(scene.audio_url);
+      setAudioBase64(null);
+      return;
+    }
+    
     const generateTTS = async () => {
       try {
         const res = await axios.post('http://localhost:8000/api/story/tts', {
           dialog: scene.dialog, emosi: scene.emosi || 'Neutral'
         });
-        if (res.data.audio_base64) setAudioBase64(res.data.audio_base64);
+        if (res.data.audio_base64) {
+          setAudioBase64(res.data.audio_base64);
+          setAudioUrl(null);
+        }
       } catch (e) { console.error('TTS error:', e); }
     };
     generateTTS();
-  }, [currentScene, scene.dialog]);
+  }, [currentScene, scene.dialog, scene.audio_url]);
 
   const goNext = () => { if (currentScene < totalScenes - 1) setCurrentScene(c => c + 1); };
   const goPrev = () => { if (currentScene > 0) setCurrentScene(c => c - 1); };
@@ -102,19 +114,32 @@ export default function StoryPlayer({ scenes, userProfile, storyMeta, onBack }) 
     }
   };
 
-  const handleAsk = async () => {
-    if (!askText.trim() || askLoading) return;
+  const handleAsk = async (overrideRetry = null, overrideText = null) => {
+    const currentText = overrideText !== null ? overrideText : askText;
+    const currentRetry = overrideRetry !== null ? overrideRetry : retryCount;
+
+    if (!currentText.trim() || askLoading) return;
     setAskLoading(true);
+    
+    if (overrideText !== null) setAskText(overrideText);
+
     try {
       const res = await axios.post('http://localhost:8000/api/story/ask', {
-        pertanyaan: askText.trim(),
+        pertanyaan: currentText.trim(),
         konteks_scene: scene.dialog + '\n' + (scene.catatan || []).join('\n'),
         user_nama: userProfile.nama,
-        retry_count: retryCount,
+        retry_count: currentRetry,
       });
       setAskAnswer(res.data);
       if (res.data.status === 'anger_mode') {
         setEmosi('marah');
+      } else {
+        const e = (res.data.emosi || 'Neutral').toLowerCase();
+        if (['joy', 'fun'].includes(e)) setEmosi('senang');
+        else if (e === 'angry') setEmosi('marah');
+        else if (e === 'sorrow') setEmosi('takut');
+        else if (e === 'surprised') setEmosi('gugup');
+        else setEmosi('idle');
       }
     } catch (e) {
       setAskAnswer({ dialog: 'G-gomen... ada error...', emosi: 'Sorrow' });
@@ -130,9 +155,10 @@ export default function StoryPlayer({ scenes, userProfile, storyMeta, onBack }) 
       setAskText('');
       setRetryCount(0);
     } else {
-      setRetryCount(c => c + 1);
+      const nextRetry = retryCount + 1;
+      setRetryCount(nextRetry);
       setAskAnswer(null);
-      setAskText('');
+      handleAsk(nextRetry, askText);
     }
   };
 
@@ -206,7 +232,15 @@ export default function StoryPlayer({ scenes, userProfile, storyMeta, onBack }) 
           height: '70vh', display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
           zIndex: 10, pointerEvents: 'none',
         }}>
-          <BocchiAvatar audioBase64={audioBase64} emosi={emosi} onFinishedPlaying={() => setAudioBase64(null)} />
+          <BocchiAvatar 
+            audioBase64={audioBase64} 
+            audioUrl={audioUrl}
+            emosi={emosi} 
+            onFinishedPlaying={() => {
+              setAudioBase64(null);
+              setAudioUrl(null);
+            }} 
+          />
         </div>
 
         {/* Dialogue Box — same as App.jsx */}
@@ -235,7 +269,7 @@ export default function StoryPlayer({ scenes, userProfile, storyMeta, onBack }) 
             </p>
 
             {/* Ask Answer — clarity buttons */}
-            {askAnswer && !askLoading && (
+            {askAnswer && !askLoading && askAnswer.status !== 'anger_mode' && (
               <div onClick={e => e.stopPropagation()} style={{
                 display: 'flex', gap: '10px', marginTop: '12px',
                 borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '12px',
@@ -248,6 +282,31 @@ export default function StoryPlayer({ scenes, userProfile, storyMeta, onBack }) 
                   flex: 1, padding: '10px', borderRadius: '12px', border: 'none',
                   background: '#ef4444', color: 'white', fontWeight: 700, fontSize: '13px', cursor: 'pointer',
                 }}>❌ Belum Jelas</button>
+              </div>
+            )}
+
+            {/* Anger Mode - Analogy Input */}
+            {askAnswer && !askLoading && askAnswer.status === 'anger_mode' && (
+              <div onClick={e => e.stopPropagation()} style={{
+                display: 'flex', gap: '10px', marginTop: '12px',
+                borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '12px',
+              }}>
+                <input autoFocus type="text"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && e.target.value.trim()) {
+                      const analogy = e.target.value.trim();
+                      const newText = askText + " (Tolong jelaskan pakai analogi: " + analogy + ")";
+                      setRetryCount(0);
+                      setAskAnswer(null);
+                      handleAsk(0, newText);
+                    }
+                  }}
+                  placeholder="Ketik analogi yang kamu inginkan (misal: game RPG, masak, dll) lalu tekan Enter..."
+                  style={{
+                    flex: 1, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(239,68,68,0.5)',
+                    borderRadius: '12px', padding: '10px 16px', color: 'white', fontSize: '14px', outline: 'none',
+                  }}
+                />
               </div>
             )}
 
@@ -266,7 +325,7 @@ export default function StoryPlayer({ scenes, userProfile, storyMeta, onBack }) 
                     borderRadius: '12px', padding: '10px 16px', color: 'white', fontSize: '14px', outline: 'none',
                   }}
                 />
-                <button onClick={handleAsk} disabled={!askText.trim() || askLoading} style={{
+                <button onClick={() => handleAsk()} disabled={!askText.trim() || askLoading} style={{
                   background: askText.trim() ? '#e11d48' : 'rgba(255,255,255,0.1)',
                   color: 'white', border: 'none', borderRadius: '12px', padding: '10px 18px',
                   fontWeight: 700, fontSize: '14px', cursor: askText.trim() ? 'pointer' : 'not-allowed',

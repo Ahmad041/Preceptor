@@ -27,6 +27,11 @@ export default function StoryUpload({ onGenerated, onBack }) {
       formData.append('file', file);
       formData.append('user_nama', nama.trim());
       formData.append('user_hubungan', hubungan.trim());
+      
+      const savedGroups = localStorage.getItem('story_groups');
+      if (savedGroups) {
+        formData.append('existing_groups', savedGroups);
+      }
 
       setProgress('Mengekstrak teks dari dokumen...');
       
@@ -48,7 +53,7 @@ export default function StoryUpload({ onGenerated, onBack }) {
 
       const res = await axios.post('http://localhost:8000/api/story/generate', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 600000, // 10 menit karena generate bisa lama
+        timeout: 0, // Tidak ada timeout agar generasi lokal yang lama tidak gagal
       });
 
       clearInterval(progressTimer);
