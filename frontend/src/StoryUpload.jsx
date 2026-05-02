@@ -1,10 +1,12 @@
 import { useState, useRef } from 'react';
 import axios from 'axios';
+import LoadingMiniGames from './LoadingMiniGames';
 
 export default function StoryUpload({ onGenerated, onBack }) {
   const [file, setFile] = useState(null);
   const [nama, setNama] = useState('');
   const [hubungan, setHubungan] = useState('');
+  const [useAudio, setUseAudio] = useState(true);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState('');
   const [dragOver, setDragOver] = useState(false);
@@ -27,6 +29,7 @@ export default function StoryUpload({ onGenerated, onBack }) {
       formData.append('file', file);
       formData.append('user_nama', nama.trim());
       formData.append('user_hubungan', hubungan.trim());
+      formData.append('use_audio', useAudio ? 'true' : 'false');
       
       const savedGroups = localStorage.getItem('story_groups');
       if (savedGroups) {
@@ -71,59 +74,9 @@ export default function StoryUpload({ onGenerated, onBack }) {
     }
   };
 
-  // Loading screen
+  // Loading screen → Mini Games!
   if (loading) {
-    return (
-      <div style={{
-        width: '100vw', height: '100vh',
-        background: '#1a0a2e',
-        display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center',
-        fontFamily: "'Segoe UI', sans-serif",
-      }}>
-        <img src="/bg-room.png" alt="bg" style={{
-          position: 'absolute', inset: 0, width: '100%', height: '100%',
-          objectFit: 'cover', opacity: 0.3,
-        }} />
-        <div style={{ position: 'relative', zIndex: 10, textAlign: 'center' }}>
-          {/* Spinning book */}
-          <div style={{
-            fontSize: '64px',
-            animation: 'spin 2s linear infinite',
-            marginBottom: '24px',
-          }}>📖</div>
-          
-          <h2 style={{ color: '#f9a8d4', fontSize: '22px', fontWeight: 700, marginBottom: '12px' }}>
-            Generating Story...
-          </h2>
-          <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '14px', maxWidth: '400px' }}>
-            {progress}
-          </p>
-          
-          {/* Progress bar animation */}
-          <div style={{
-            width: '300px', height: '4px', background: 'rgba(255,255,255,0.1)',
-            borderRadius: '2px', marginTop: '24px', overflow: 'hidden',
-          }}>
-            <div style={{
-              width: '40%', height: '100%',
-              background: 'linear-gradient(90deg, #f472b6, #e11d48, #f472b6)',
-              borderRadius: '2px',
-              animation: 'loadSlide 1.5s ease-in-out infinite',
-            }} />
-          </div>
-          
-          <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '11px', marginTop: '16px' }}>
-            Ini bisa memakan waktu 1-5 menit tergantung panjang dokumen
-          </p>
-        </div>
-        
-        <style>{`
-          @keyframes spin { 0% { transform: rotateY(0deg); } 100% { transform: rotateY(360deg); } }
-          @keyframes loadSlide { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }
-        `}</style>
-      </div>
-    );
+    return <LoadingMiniGames progress={progress} useAudio={useAudio} />;
   }
 
   return (
@@ -243,6 +196,46 @@ export default function StoryUpload({ onGenerated, onBack }) {
                 onFocus={e => e.target.style.borderColor = '#f43f5e'}
                 onBlur={e => e.target.style.borderColor = '#e4e4e7'}
               />
+            </div>
+          </div>
+
+          {/* Audio Toggle */}
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '14px 18px', borderRadius: '16px',
+            background: useAudio ? '#fff0f5' : '#f4f4f5',
+            border: `2px solid ${useAudio ? '#fda4af' : '#e4e4e7'}`,
+            marginBottom: '16px', transition: 'all 0.3s',
+          }}>
+            <div>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: '#18181b' }}>
+                🔊 Suara Bocchi
+              </div>
+              <div style={{ fontSize: '11px', color: '#71717a', marginTop: '2px' }}>
+                {useAudio
+                  ? 'Audio aktif — Bocchi akan bicara (loading lebih lama)'
+                  : 'Audio mati — Teks saja, loading lebih cepat'
+                }
+              </div>
+            </div>
+            <div
+              onClick={() => setUseAudio(!useAudio)}
+              style={{
+                width: '48px', height: '26px', borderRadius: '13px',
+                background: useAudio ? '#e11d48' : '#d4d4d8',
+                position: 'relative', cursor: 'pointer',
+                transition: 'background 0.3s',
+                flexShrink: 0,
+              }}
+            >
+              <div style={{
+                width: '22px', height: '22px', borderRadius: '50%',
+                background: 'white',
+                position: 'absolute', top: '2px',
+                left: useAudio ? '24px' : '2px',
+                transition: 'left 0.3s',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+              }} />
             </div>
           </div>
 

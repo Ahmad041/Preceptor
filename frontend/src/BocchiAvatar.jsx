@@ -255,6 +255,10 @@ export default function BocchiAvatar({ audioBase64, audioUrl, emosi = 'idle', on
   const audioContextRef = useRef(null);
   const sourceNodeRef = useRef(null);
   const analyzerRef = useRef(null);
+  const onFinishedRef = useRef(onFinishedPlaying);
+
+  // Selalu update ref agar onended pakai callback terbaru
+  useEffect(() => { onFinishedRef.current = onFinishedPlaying; }, [onFinishedPlaying]);
 
   // Inisialisasi AudioContext sekali saja
   const getAudioContext = useCallback(() => {
@@ -276,7 +280,16 @@ export default function BocchiAvatar({ audioBase64, audioUrl, emosi = 'idle', on
 
   // Setiap kali ada audio baru dari backend, decode & putar
   useEffect(() => {
-    if (!audioBase64 && !audioUrl) return;
+    if (!audioBase64 && !audioUrl) {
+      // Tidak ada audio — stop yang sedang jalan
+      if (sourceNodeRef.current) {
+        try { sourceNodeRef.current.stop(); } catch(e) {}
+        sourceNodeRef.current = null;
+      }
+      return;
+    }
+    
+    let cancelled = false;
     
     const playAudio = async () => {
       try {
@@ -290,12 +303,17 @@ export default function BocchiAvatar({ audioBase64, audioUrl, emosi = 'idle', on
         // Stop audio sebelumnya jika masih playing
         if (sourceNodeRef.current) {
           try { sourceNodeRef.current.stop(); } catch(e) {}
+          sourceNodeRef.current = null;
         }
         
         let audioBuffer;
         
         if (audioUrl) {
-          const response = await fetch(`http://localhost:8000${audioUrl}`);
+          // Bisa berupa full URL atau relative path
+          const fetchUrl = audioUrl.startsWith('http')
+            ? audioUrl
+            : `http://localhost:8000${audioUrl}`;
+          const response = await fetch(fetchUrl);
           const arrayBuffer = await response.arrayBuffer();
           audioBuffer = await ctx.decodeAudioData(arrayBuffer);
         } else if (audioBase64) {
@@ -309,6 +327,9 @@ export default function BocchiAvatar({ audioBase64, audioUrl, emosi = 'idle', on
           // 2. Decode audio data
           audioBuffer = await ctx.decodeAudioData(bytes.buffer);
         }
+        
+        // Guard: jangan play kalau effect sudah di-cleanup (user pindah scene)
+        if (cancelled) return;
         
         // 3. Buat source node baru
         const source = ctx.createBufferSource();
@@ -327,8 +348,11 @@ export default function BocchiAvatar({ audioBase64, audioUrl, emosi = 'idle', on
         // Cleanup saat audio selesai
         source.onended = () => {
           console.log('[LipSync] Audio selesai.');
-          sourceNodeRef.current = null;
-          if (onFinishedPlaying) onFinishedPlaying();
+          // Hanya clear ref jika masih source yang sama
+          if (sourceNodeRef.current === source) {
+            sourceNodeRef.current = null;
+          }
+          if (onFinishedRef.current) onFinishedRef.current();
         };
         
       } catch (err) {
@@ -337,7 +361,16 @@ export default function BocchiAvatar({ audioBase64, audioUrl, emosi = 'idle', on
     };
     
     playAudio();
-  }, [audioBase64, audioUrl, getAudioContext, onFinishedPlaying]);
+    
+    // CLEANUP: stop audio saat scene berubah atau component unmount
+    return () => {
+      cancelled = true;
+      if (sourceNodeRef.current) {
+        try { sourceNodeRef.current.stop(); } catch(e) {}
+        sourceNodeRef.current = null;
+      }
+    };
+  }, [audioBase64, audioUrl, getAudioContext]);
 
   return (
     <div style={{ height: '100%', width: '100%', background: 'transparent' }}>

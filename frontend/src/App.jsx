@@ -352,29 +352,39 @@ function App() {
         setUserProfile(profile);
         
         // Save to group based on backend classification
+        // Strip audio_base64 dari scenes sebelum simpan ke localStorage (hemat storage!)
+        // audio_file tetap disimpan sebagai referensi ke file di disk
+        const lightData = {
+          ...data,
+          scenes: data.scenes.map(s => {
+            const { audio_base64, ...rest } = s;
+            return rest;  // simpan semua kecuali audio_base64
+          }),
+        };
+        
         const savedGroups = JSON.parse(localStorage.getItem('story_groups') || '[]');
-        if (data.is_new_group) {
+        if (lightData.is_new_group) {
           const newGroup = {
             id: Date.now().toString(),
-            title: data.judul || 'New Story Group',
-            chapters: data.tipe === 'chapter' ? [data] : [],
-            ovas: data.tipe === 'ova' ? [data] : []
+            title: lightData.judul || 'New Story Group',
+            chapters: lightData.tipe === 'chapter' ? [lightData] : [],
+            ovas: lightData.tipe === 'ova' ? [lightData] : []
           };
           savedGroups.push(newGroup);
         } else {
-          const groupIndex = savedGroups.findIndex(g => g.id === data.group_id);
+          const groupIndex = savedGroups.findIndex(g => g.id === lightData.group_id);
           if (groupIndex !== -1) {
-            if (data.tipe === 'ova') {
-              savedGroups[groupIndex].ovas.push(data);
+            if (lightData.tipe === 'ova') {
+              savedGroups[groupIndex].ovas.push(lightData);
             } else {
-              savedGroups[groupIndex].chapters.push(data);
+              savedGroups[groupIndex].chapters.push(lightData);
             }
           } else {
             // Fallback if group_id not found
             const newGroup = {
               id: Date.now().toString(),
-              title: data.judul || 'New Story Group',
-              chapters: [data],
+              title: lightData.judul || 'New Story Group',
+              chapters: [lightData],
               ovas: []
             };
             savedGroups.push(newGroup);

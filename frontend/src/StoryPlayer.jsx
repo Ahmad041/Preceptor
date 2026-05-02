@@ -78,30 +78,41 @@ export default function StoryPlayer({ scenes, userProfile, storyMeta, onBack }) 
     else setEmosi('idle');
   }, [currentScene, scene.emosi]);
 
-  // Generate TTS for current scene
+  // Audio: first play = base64 ada di response, replay = fetch dari disk via POST
   useEffect(() => {
     if (!scene.dialog) return;
     
-    // Jika sudah pre-generated, gunakan URL langsung
-    if (scene.audio_url) {
-      setAudioUrl(scene.audio_url);
-      setAudioBase64(null);
+    // Case 1: base64 sudah ada di scene (first play setelah generate)
+    if (scene.audio_base64) {
+      setAudioBase64(scene.audio_base64);
+      setAudioUrl(null);
       return;
     }
     
-    const generateTTS = async () => {
-      try {
-        const res = await axios.post('http://localhost:8000/api/story/tts', {
-          dialog: scene.dialog, emosi: scene.emosi || 'Neutral'
-        });
-        if (res.data.audio_base64) {
-          setAudioBase64(res.data.audio_base64);
-          setAudioUrl(null);
+    // Case 2: replay dari library — ada audio_file tapi tidak ada base64
+    if (scene.audio_file) {
+      let cancelled = false;
+      const fetchFromDisk = async () => {
+        try {
+          const res = await axios.post('http://localhost:8000/api/audio/fetch', {
+            filename: scene.audio_file,
+          });
+          if (!cancelled && res.data.audio_base64) {
+            setAudioBase64(res.data.audio_base64);
+            setAudioUrl(null);
+          }
+        } catch (e) {
+          console.error('Gagal fetch audio dari disk:', e);
         }
-      } catch (e) { console.error('TTS error:', e); }
-    };
-    generateTTS();
-  }, [currentScene, scene.dialog, scene.audio_url]);
+      };
+      fetchFromDisk();
+      return () => { cancelled = true; };
+    }
+    
+    // Case 3: tidak ada audio sama sekali
+    setAudioBase64(null);
+    setAudioUrl(null);
+  }, [currentScene, scene.dialog, scene.audio_base64, scene.audio_file]);
 
   const goNext = () => { if (currentScene < totalScenes - 1) setCurrentScene(c => c + 1); };
   const goPrev = () => { if (currentScene > 0) setCurrentScene(c => c - 1); };

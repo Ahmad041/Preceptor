@@ -1009,7 +1009,8 @@ async def generate_story(
     file: UploadFile = File(...),
     user_nama: str = Form("Senpai"),
     user_hubungan: str = Form("Teman"),
-    existing_groups: Optional[str] = Form(None)
+    existing_groups: Optional[str] = Form(None),
+    use_audio: str = Form("true")
 ):
     """Upload dokumen → parse → chunk → generate VN scenes via Ollama lokal"""
     try:
@@ -1067,31 +1068,54 @@ async def generate_story(
         classification = classify_story_document(file.filename, teks, existing_groups)
         print(f"[STORY] Classification: {classification}")
         
-        # 7. Generate Audio secara berurutan setelah teks selesai
-        print(f"[STORY] Mulai pre-generation audio untuk {len(final_scenes)} scene...")
-        for i, scene in enumerate(final_scenes):
-            try:
-                teks_dialog = scene.get("dialog", "")
-                if teks_dialog and QWEN_TTS_MODEL and QWEN_TTS_MODEL != "fallback":
-                    print(f"  -> Generating audio {i+1}/{len(final_scenes)}...")
-                    ref_audio = REFERENSI_SUARA if os.path.exists(REFERENSI_SUARA) else None
-                    wavs, sample_rate = QWEN_TTS_MODEL.generate_voice_clone(
-                        text=teks_dialog,
-                        ref_audio=ref_audio,
-                        x_vector_only_mode=True,
-                        language="Auto",
-                    )
-                    
-                    audio_filename = f"story_{int(time.time())}_{i}.wav"
-                    audio_path = os.path.join(AUDIO_CACHE_DIR, audio_filename)
-                    sf.write(audio_path, wavs[0], sample_rate)
-                    
-                    scene["audio_url"] = f"/api/audio/{audio_filename}"
-            except Exception as e:
-                print(f"  -> [WARNING] Gagal generate audio scene {i+1}: {e}")
+        # 7. Pre-generate Audio — simpan ke disk + embed base64 di response
+        audio_enabled = use_audio.lower() == "true"
+        if audio_enabled:
+            print(f"[STORY] Mulai pre-generation audio untuk {len(final_scenes)} scene...")
+            import io
+            for i, scene in enumerate(final_scenes):
+                try:
+                    teks_dialog = scene.get("dialog", "")
+                    if teks_dialog and QWEN_TTS_MODEL and QWEN_TTS_MODEL != "fallback":
+                        print(f"  -> Generating audio {i+1}/{len(final_scenes)}...")
+                        ref_audio = REFERENSI_SUARA if os.path.exists(REFERENSI_SUARA) else None
+                        wavs, sample_rate = QWEN_TTS_MODEL.generate_voice_clone(
+                            text=teks_dialog,
+                            ref_audio=ref_audio,
+                            x_vector_only_mode=True,
+                            language="Auto",
+                        )
+                        
+                        # Simpan ke file disk (untuk replay nanti)
+                        audio_filename = f"story_{int(time.time())}_{i}.wav"
+                        audio_path = os.path.join(AUDIO_CACHE_DIR, audio_filename)
+                        sf.write(audio_path, wavs[0], sample_rate)
+                        
+                        # Juga encode base64 untuk first-play (aman dari IDM)
+                        with open(audio_path, "rb") as f:
+                            scene["audio_base64"] = base64.b64encode(f.read()).decode("utf-8")
+                        
+                        # Simpan referensi file untuk replay dari library
+                        scene["audio_file"] = audio_filename
+                        scene["audio_url"] = None
+                        print(f"  -> ✅ Audio scene {i+1} tersimpan: {audio_filename}")
+                    else:
+                        scene["audio_base64"] = None
+                        scene["audio_file"] = None
+                        scene["audio_url"] = None
+                except Exception as e:
+                    print(f"  -> [WARNING] Gagal generate audio scene {i+1}: {e}")
+                    scene["audio_base64"] = None
+                    scene["audio_file"] = None
+                    scene["audio_url"] = None
+            print(f"[STORY] ✅ Selesai! Total {len(final_scenes)} scenes generated beserta audio")
+        else:
+            print(f"[STORY] ⏩ Audio dilewati (user memilih mode tanpa audio)")
+            for scene in final_scenes:
                 scene["audio_url"] = None
-
-        print(f"[STORY] ✅ Selesai! Total {len(final_scenes)} scenes generated beserta audio")
+                scene["audio_base64"] = None
+                scene["audio_file"] = None
+            print(f"[STORY] ✅ Selesai! Total {len(final_scenes)} scenes generated (tanpa audio)")
         
         return {
             "status": "berhasil",
@@ -1143,7 +1167,7 @@ Format: JSON {{"dialog": "...", "emosi": "Angry", "minta_analogi": true}}"""
                     "stream": False,
                     "options": {"temperature": 0.8, "num_predict": 500}
                 },
-                timeout=60
+                timeout=180
             )
             response.raise_for_status()
             result = response.json()
@@ -1193,7 +1217,7 @@ Jawab dengan gaya Bocchi (gugup, gagap, tapi informatif). Format: JSON {{"dialog
                 "stream": False,
                 "options": {"temperature": 0.6, "num_predict": 800}
             },
-            timeout=60
+            timeout=180
         )
         response.raise_for_status()
         result = response.json()
@@ -1218,10 +1242,16 @@ Jawab dengan gaya Bocchi (gugup, gagap, tapi informatif). Format: JSON {{"dialog
             }
             
     except Exception as e:
-        print(f"[STORY ASK ERROR] {e}")
+        err_msg = str(e)
+        if 'timed out' in err_msg.lower() or 'timeout' in err_msg.lower():
+            user_msg = "G-gomen... Ollama-nya lagi lambat banget, coba tanya lagi ya..."
+        elif 'connection' in err_msg.lower() or 'refused' in err_msg.lower():
+            user_msg = "G-gomen... Ollama-nya belum nyala, coba restart Ollama dulu ya..."
+        else:
+            user_msg = f"G-gomen... ada error: {err_msg[:80]}"
         return {
             "status": "gagal",
-            "dialog": f"G-gomen... ada error: {str(e)[:100]}",
+            "dialog": user_msg,
             "emosi": "Sorrow"
         }
 
@@ -1266,11 +1296,31 @@ async def story_tts(data: dict):
 
 @app.get("/api/audio/{filename}")
 async def get_audio(filename: str):
-    """Mengambil file audio dari cache"""
+    """Mengambil file audio dari cache — inline playback, bukan download"""
     file_path = os.path.join(AUDIO_CACHE_DIR, filename)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Audio file not found")
-    return FileResponse(file_path, media_type="audio/wav")
+    return FileResponse(
+        file_path,
+        media_type="audio/wav",
+        headers={"Content-Disposition": f"inline; filename=\"{filename}\""}
+    )
+
+
+class AudioFetchRequest(BaseModel):
+    filename: str
+
+@app.post("/api/audio/fetch")
+async def fetch_audio_base64(data: AudioFetchRequest):
+    """Mengambil audio dari cache sebagai base64 JSON — aman dari IDM intercept"""
+    file_path = os.path.join(AUDIO_CACHE_DIR, data.filename)
+    if not os.path.exists(file_path):
+        return {"audio_base64": None, "error": "File not found"}
+    
+    with open(file_path, "rb") as f:
+        audio_b64 = base64.b64encode(f.read()).decode("utf-8")
+    
+    return {"audio_base64": audio_b64}
 
 
 class QuizGenerateRequest(BaseModel):
