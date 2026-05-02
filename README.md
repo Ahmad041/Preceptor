@@ -5,16 +5,22 @@
 ## ✨ Fitur Utama
 
 - **🗣️ AI Karakter Interaktif**: Ngobrol dan bermain peran (roleplay) secara natural dengan asisten bertema Bocchi.
-- **🎙️ Sintesis Suara (RVC)**: Respons suara yang terasa nyata menggunakan *Retrieval-based Voice Conversion* (RVC) untuk pengalaman yang lebih hidup.
-- **📖 Story Mode (Visual Novel)**: Unggah dokumen apa saja, dan AI akan otomatis membuat cerita interaktif bergaya visual novel berdasarkan konten dokumen tersebut.
-- **🧠 Digerakkan oleh LLM Lokal**: Berjalan sepenuhnya secara lokal menggunakan **Ollama (Qwen)** untuk pemrosesan AI yang cepat, privat, dan bisa digunakan tanpa internet (offline).
-- **🔍 Logika Hybrid Q&A**: Logika kontekstual pintar untuk menjawab pertanyaan secara responsif dan efisien.
+- **🎙️ Sintesis Suara (RVC & Qwen3-TTS)**: Respons suara yang terasa nyata menggunakan *Retrieval-based Voice Conversion* (RVC) dan integrasi terbaru Qwen3-TTS untuk kloning suara yang lebih presisi.
+- **📖 Story Mode & Library**: Unggah dokumen, dan AI akan otomatis membuat cerita interaktif bergaya visual novel. Kelola semua ceritamu di dalam **Story Library**.
+- **🧠 Quiz Mode**: Tantang dirimu dengan kuis interaktif yang dihasilkan secara otomatis dari cerita yang kamu buat.
+- **🎮 Loading Mini-Games**: Bosan menunggu AI berpikir? Mainkan mini-game (seperti *Social Runner*) sambil menunggu proses generasi teks atau suara selesai.
+- **🎬 Animasi Smooth**: Integrasi animasi berkualitas tinggi (berbasis Mate-Engine) untuk ekspresi Bocchi yang lebih dinamis.
+- **🎵 Background Music**: Dukungan musik latar untuk membangun suasana saat berinteraksi atau bermain game.
+- **💻 Local First**: Berjalan sepenuhnya secara lokal menggunakan **Ollama (Qwen)** untuk pemrosesan AI yang cepat, privat, dan offline-friendly.
 
 ## 🛠️ Teknologi yang Digunakan
 
-- **Backend**: Python, FastAPI
-- **Frontend**: React, Vite, Tailwind CSS
-- **AI & ML**: Ollama (Qwen 3.5), RVC (Retrieval-based Voice Conversion)
+- **Backend**: Python 3.10+, FastAPI
+- **Frontend**: React, Vite, Tailwind CSS, Framer Motion
+- **AI & ML**: 
+  - **LLM**: Ollama (Qwen 2.5/3.5)
+  - **TTS**: Qwen3-TTS, RVC (Retrieval-based Voice Conversion)
+- **Utilities**: PyPDF2, python-docx (untuk pemrosesan dokumen)
 
 ## 🚀 Cara Menjalankan
 
@@ -22,6 +28,7 @@
 - Python 3.10+
 - Node.js & npm
 - [Ollama](https://ollama.com/) sudah terinstal dan berjalan secara lokal.
+- GPU NVIDIA (Direkomendasikan untuk performa AI optimal).
 
 ### Instalasi
 
@@ -35,10 +42,12 @@
    ```bash
    # Buat dan aktifkan virtual environment
    python -m venv venv
-   venv\Scripts\activate  # Untuk pengguna Windows
+   venv\Scripts\activate  # Untuk Windows
 
-   # Instal dependensi (pastikan menginstal library yang dibutuhkan seperti FastAPI, Uvicorn, dll)
-   pip install fastapi uvicorn python-multipart
+   # Instal dependensi utama
+   pip install -r requirements.txt 
+   # Catatan: Jika requirements.txt belum ada, instal manual:
+   # pip install fastapi uvicorn python-multipart torch numpy soundfile requests python-dotenv PyPDF2 python-docx
    ```
 
 3. **Setup Frontend:**
@@ -61,8 +70,16 @@
    npm run dev
    ```
 
-## 📝 Catatan Tentang File Berukuran Besar
-Karena batasan ukuran file di GitHub, file model AI yang besar (`.pth`, `.index` untuk RVC) dan file audio tidak disertakan dalam repository ini. Kamu perlu menyiapkan model RVC kamu sendiri dan menempatkannya di direktori yang sesuai agar fitur suara dapat berfungsi.
+## 📝 Catatan Penting
+
+- **File Model**: Karena batasan ukuran GitHub, file model RVC (`.pth`, `.index`) dan model Qwen3-TTS harus disiapkan secara manual di folder root atau folder model yang ditentukan.
+- **API Keys**: Gunakan file `.env` untuk menyimpan API Key (seperti Gemini atau OpenRouter jika ingin menggunakan mode cloud). Jangan pernah membagikan file `.env` kamu.
+- **Animasi**: File animasi disimpan di `frontend/public/animations/`.
+
+## 🗺️ Roadmap / Rencana Mendatang
+- [ ] Migrasi ke Aplikasi Desktop Native menggunakan **Electron**.
+- [ ] Fitur *Lazy Download* untuk model AI agar installer tetap ringan.
+- [ ] Penambahan lebih banyak mini-game saat loading.
 
 ## 📄 Lisensi
-Proyek ini dibuat untuk tujuan edukasi dan penggunaan pribadi.
+Proyek ini dibuat untuk tujuan edukasi, hobi, dan penggunaan pribadi.
