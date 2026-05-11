@@ -1,0 +1,268 @@
+.team-stats-container {
+    padding: 30px;
+    color: #e6e6e6;
+    animation: fadeIn 0.5s ease-out;
+}
+
+.stats-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 40px;
+    border-bottom: 1px solid rgba(244, 114, 182, 0.2);
+    padding-bottom: 20px;
+}
+
+.stats-header h2 {
+    font-size: 1.5rem;
+    font-weight: 900;
+    letter-spacing: 4px;
+    margin: 0;
+    background: linear-gradient(90deg, #f472b6, #fb923c);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.total-metrics {
+    display: flex;
+    gap: 30px;
+}
+
+.metric-box {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+}
+
+.metric-box .label {
+    font-size: 0.65rem;
+    opacity: 0.5;
+    letter-spacing: 1px;
+}
+
+.metric-box .value {
+    font-size: 1.2rem;
+    font-weight: 800;
+    font-family: 'Courier New', Courier, monospace;
+    color: #f472b6;
+}
+
+.metric-box .value.green {
+    color: #4ade80;
+    text-shadow: 0 0 10px rgba(74, 222, 128, 0.3);
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 25px;
+}
+
+.agent-stat-card {
+    background: rgba(20, 10, 35, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-left: 4px solid #fff;
+    border-radius: 4px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    backdrop-filter: blur(10px);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.agent-stat-card:hover {
+    transform: translateY(-5px);
+    background: rgba(30, 15, 50, 0.8);
+}
+
+/* Colors */
+.agent-stat-card.cyan { border-left-color: #06b6d4; }
+.agent-stat-card.blue { border-left-color: #3b82f6; }
+.agent-stat-card.red { border-left-color: #ef4444; }
+.agent-stat-card.orange { border-left-color: #f97316; }
+.agent-stat-card.pink { border-left-color: #ec4899; }
+.agent-stat-card.yellow { border-left-color: #eab308; }
+.agent-stat-card.purple { border-left-color: #a855f7; }
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.agent-name {
+    font-weight: 800;
+    font-size: 0.85rem;
+    letter-spacing: 1px;
+}
+
+.agent-id {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.65rem;
+    opacity: 0.4;
+}
+
+.stat-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.bar-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.bar-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.6rem;
+    font-family: 'Courier New', Courier, monospace;
+    font-weight: 700;
+    opacity: 0.7;
+}
+
+.bar-bg {
+    height: 6px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 1.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.bar-fill.token { background: #f472b6; box-shadow: 0 0 10px rgba(244, 114, 182, 0.5); }
+.bar-fill.kp { background: #4ade80; box-shadow: 0 0 10px rgba(74, 222, 128, 0.5); }
+
+/* Color overrides for bars if desired */
+.cyan .bar-fill.token { background: #06b6d4; box-shadow: 0 0 10px rgba(6, 182, 212, 0.5); }
+.blue .bar-fill.token { background: #3b82f6; box-shadow: 0 0 10px rgba(59, 130, 246, 0.5); }
+.red .bar-fill.token { background: #ef4444; box-shadow: 0 0 10px rgba(239, 68, 68, 0.5); }
+.orange .bar-fill.token { background: #f97316; box-shadow: 0 0 10px rgba(249, 115, 22, 0.5); }
+.pink .bar-fill.token { background: #ec4899; box-shadow: 0 0 10px rgba(236, 72, 153, 0.5); }
+.yellow .bar-fill.token { background: #eab308; box-shadow: 0 0 10px rgba(234, 179, 8, 0.5); }
+.purple .bar-fill.token { background: #a855f7; box-shadow: 0 0 10px rgba(168, 85, 247, 0.5); }
+
+.card-footer {
+    margin-top: 5px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.55rem;
+    opacity: 0.4;
+    font-weight: 600;
+}
+
+.stats-loading {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Courier New', Courier, monospace;
+    letter-spacing: 5px;
+    color: #f472b6;
+    animation: blink 1s infinite;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
+/* Projects Stats Section */
+.projects-stats-section {
+    margin-top: 50px;
+    background: rgba(15, 10, 25, 0.4);
+    border-radius: 8px;
+    padding: 30px;
+    border: 1px solid rgba(244, 114, 182, 0.1);
+}
+
+.section-header h3 {
+    font-size: 1.1rem;
+    font-weight: 800;
+    margin-bottom: 5px;
+    color: #f472b6;
+    letter-spacing: 2px;
+}
+
+.section-header p {
+    font-size: 0.75rem;
+    opacity: 0.5;
+    margin-bottom: 30px;
+}
+
+.projects-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.project-stat-row {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.project-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.project-name {
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: #e6e6e6;
+}
+
+.project-details {
+    font-size: 0.65rem;
+    font-family: 'Courier New', Courier, monospace;
+    opacity: 0.4;
+}
+
+.project-bar-container {
+    height: 20px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 10px;
+    overflow: hidden;
+    position: relative;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.project-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #f472b6, #a855f7);
+    transition: width 2s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-right: 15px;
+    box-shadow: 0 0 15px rgba(244, 114, 182, 0.2);
+}
+
+.token-value {
+    font-size: 0.65rem;
+    font-weight: 900;
+    color: #fff;
+    text-shadow: 0 0 5px rgba(0,0,0,0.5);
+}
+
+.no-data {
+    text-align: center;
+    padding: 40px;
+    font-family: 'Courier New', Courier, monospace;
+    opacity: 0.3;
+    letter-spacing: 2px;
+}

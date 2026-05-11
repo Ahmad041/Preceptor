@@ -1,0 +1,127 @@
+{
+  "total_budget": 1000000,
+  "spent": 915.6,
+  "currency": "Kessoku Points",
+  "agents": {
+    "soft": {
+      "tokens": 0,
+      "kessoku": 0,
+      "name": "Hitori Gotoh"
+    },
+    "docs": {
+      "tokens": 5659,
+      "kessoku": 565.9,
+      "name": "Ryo Yamada"
+    },
+    "scout": {
+      "tokens": 0,
+      "kessoku": 0,
+      "name": "Nijika Ijichi"
+    },
+    "analyst": {
+      "tokens": 0,
+      "kessoku": 0,
+      "name": "Kita Ikuyo"
+    },
+    "mon": {
+      "tokens": 0,
+      "kessoku": 0,
+      "name": "Dorito (PA-san)"
+    },
+    "content": {
+      "tokens": 0,
+      "kessoku": 0,
+      "name": "Kikuri Hiroi"
+    },
+    "lead": {
+      "tokens": 3497,
+      "kessoku": 349.7
+    }
+  },
+  "history": [
+    {
+      "timestamp": "2026-05-11T08:05:08.260921",
+      "agent_id": "docs",
+      "tokens": 262,
+      "cost": 26.2
+    },
+    {
+      "timestamp": "2026-05-11T08:06:31.117322",
+      "agent_id": "docs",
+      "tokens": 337,
+      "cost": 33.7
+    },
+    {
+      "timestamp": "2026-05-11T08:10:33.293133",
+      "agent_id": "docs",
+      "tokens": 540,
+      "cost": 54.0
+    },
+    {
+      "timestamp": "2026-05-11T08:26:59.561689",
+      "agent_id": "docs",
+      "tokens": 180,
+      "cost": 18.0
+    },
+    {
+      "timestamp": "2026-05-11T08:29:49.601670",
+      "agent_id": "docs",
+      "tokens": 324,
+      "cost": 32.4
+    },
+    {
+      "timestamp": "2026-05-11T09:14:53.423353",
+      "agent_id": "docs",
+      "tokens": 222,
+      "cost": 22.2
+    },
+    {
+      "timestamp": "2026-05-11T09:14:54.762139",
+      "agent_id": "docs",
+      "tokens": 290,
+      "cost": 29.0
+    },
+    {
+      "timestamp": "2026-05-11T09:16:51.864959",
+      "agent_id": "docs",
+      "tokens": 328,
+      "cost": 32.8
+    },
+    {
+      "timestamp": "2026-05-11T09:19:30.490287",
+      "agent_id": "docs",
+      "tokens": 409,
+      "cost": 40.9
+    },
+    {
+      "timestamp": "2026-05-11T09:22:06.837682",
+      "agent_id": "docs",
+      "tokens": 1700,
+      "cost": 170.0
+    },
+    {
+      "timestamp": "2026-05-11T09:22:55.052556",
+      "agent_id": "docs",
+      "tokens": 1067,
+      "cost": 106.7
+    },
+    {
+      "timestamp": "2026-05-11T10:13:12.531254",
+      "agent_id": "lead",
+      "tokens": 1253,
+      "cost": 125.3
+    },
+    {
+      "timestamp": "2026-05-11T10:21:31.062602",
+      "agent_id": "lead",
+      "tokens": 1027,
+      "cost": 102.7
+    },
+    {
+      "timestamp": "2026-05-11T10:27:23.247003",
+      "agent_id": "lead",
+      "tokens": 1217,
+      "cost": 121.7
+    }
+  ]
+}

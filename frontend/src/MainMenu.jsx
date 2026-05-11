@@ -168,20 +168,18 @@ export default function MainMenu({ onStart }) {
             {[
               { id: 'story', title: 'Story Mode', desc: 'Ubah PDF/Paper menjadi Visual Novel Interaktif', icon: '🎬', status: 'Aktif' },
               { id: 'sandbox', title: 'Sandbox Mode', desc: 'Mode bebas, chatting, dan kontrol sistem laptop', icon: '🛠️', status: 'Aktif' },
-              { id: 'company', title: 'Company Mode', desc: 'Manajemen tim dan kolaborasi bisnis terintegrasi', icon: '🏢', status: 'Coming Soon' }
+              { id: 'company', title: 'Company Mode', desc: 'Obsidian-like Note System with 3D AI Knowledge Graph', icon: '🧠', status: 'Aktif' }
             ].map(mode => (
               <button
                 key={mode.id}
                 onClick={() => {
-                  if (mode.id === 'sandbox' || mode.id === 'story') {
+                  if (mode.id === 'sandbox' || mode.id === 'story' || mode.id === 'company') {
                     setSelectedMode(mode.id);
                     setShowModes(false);
-                    setShowForm(mode.id === 'sandbox');
+                    setShowForm(mode.id === 'sandbox' || mode.id === 'company');
                     if (mode.id === 'story') {
                       onStart({ nama: '', hubungan: '' }, 'story');
                     }
-                  } else {
-                    alert(`${mode.title} sedang dalam pengembangan!`);
                   }
                 }}
                 style={{

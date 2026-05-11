@@ -1,0 +1,140 @@
+
+# ============================================================
+# COMPANY MODE API ENDPOINTS (BOCCHI NOTES)
+# ============================================================
+
+@app.get("/api/notes")
+async def list_notes(root: Optional[str] = None, tag: Optional[str] = None):
+    return notes_index.list_notes(root_folder=root, tag=tag)
+
+@app.get("/api/notes/folders")
+async def get_folder_tree():
+    return notes_index.get_folder_tree()
+
+@app.get("/api/notes/tags")
+async def get_tags():
+    return notes_index.get_all_tags()
+
+@app.get("/api/notes/graph")
+async def get_graph():
+    graph_data = notes_index.get_graph_data()
+    # Tambahkan 3D positions dari embedding engine
+    positions = embedding_engine.get_graph_positions()
+    
+    for node in graph_data["nodes"]:
+        node["position"] = positions.get(node["id"], [0, 0, 0])
+        
+    return graph_data
+
+@app.get("/api/notes/{note_id}")
+async def get_note(note_id: str):
+    note = notes_index.get_note(note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note tidak ditemukan")
+    
+    # Tambahkan similar notes & backlinks
+    note["similar_notes"] = embedding_engine.find_similar(note_id)
+    note["backlinks"] = notes_index.get_backlinks(note_id)
+    note["outgoing_links"] = notes_index.get_outgoing_links(note_id)
+    
+    return note
+
+@app.post("/api/notes")
+async def create_note(data: NoteCreate):
+    meta = notes_index.create_note(data.title, data.content, data.folder, data.tags)
+    if meta:
+        # Update embedding in background
+        asyncio.create_task(initialize_embeddings())
+    return meta
+
+@app.put("/api/notes/{note_id}")
+async def update_note(note_id: str, data: NoteUpdate):
+    meta = notes_index.update_note(note_id, data.content)
+    if not meta:
+        raise HTTPException(status_code=404, detail="Note tidak ditemukan")
+    
+    # Update embedding in background
+    asyncio.create_task(initialize_embeddings())
+    return meta
+
+@app.delete("/api/notes/{note_id}")
+async def delete_note(note_id: str):
+    success = notes_index.delete_note(note_id)
+    if success:
+        embedding_engine.remove_note(note_id)
+    return {"status": "success" if success else "failed"}
+
+@app.get("/api/notes/search/semantic")
+async def semantic_search(q: str, limit: int = 10):
+    results = embedding_engine.semantic_search(q, top_k=limit)
+    # Map back to metadata
+    full_results = []
+    for res in results:
+        meta = notes_index.notes.get(res["id"])
+        if meta:
+            full_results.append({**meta, "similarity": res["similarity"]})
+    return full_results
+
+@app.get("/api/notes/search/text")
+async def text_search(q: str, limit: int = 20):
+    return notes_index.search_text(q, max_results=limit)
+
+@app.get("/api/notes/daily/today")
+async def get_daily_today():
+    note = notes_index.get_daily_note()
+    if not note:
+        note = notes_index.create_daily_note()
+    return note
+
+@app.post("/api/notes/ask")
+async def ask_bocchi_notes(data: NoteAsk):
+    try:
+        # RAG implementation
+        context = ""
+        
+        # 1. Cari konteks yang relevan
+        if data.note_id:
+            # Jika user sedang buka note tertentu, gunakan note itu sebagai konteks utama
+            note = notes_index.get_note(data.note_id)
+            if note:
+                context = f"--- KONTEKS NOTE SAAT INI ({note['title']}) ---\n{note['content']}\n\n"
+        
+        # 2. Tambah konteks dari semantic search
+        similar = embedding_engine.semantic_search(data.question, top_k=3)
+        if similar:
+            context += "--- KONTEKS TERKAIT LAINNYA ---\n"
+            for res in similar:
+                if res["id"] != data.note_id:
+                    note = notes_index.get_note(res["id"])
+                    if note:
+                        context += f"Note: {note['title']}\n{note['content'][:1000]}\n\n"
+
+        # 3. Kirim ke Ollama
+        prompt = f\"\"\"Kamu adalah Hitori 'Bocchi' Gotoh dari anime Bocchi the Rock!. Kamu sangat pemalu, sering panik, tapi sangat peduli.
+Gunakan data catatan (notes) di bawah ini untuk menjawab pertanyaan Senpai. 
+Jika jawabannya tidak ada di catatan, bilang saja sejujurnya dengan gaya bicaramu yang gugup tapi berusaha membantu.
+
+KONTEKS CATATAN:
+{{context}}
+
+PERTANYAAN SENPAI:
+{{data.question}}
+
+Jawablah dengan gaya Bocchi (gunakan s-s-sperti ini jika gugup, panggil user sebagai Senpai).\"\"\"
+
+        response = requests.post(
+            os_tools.OLLAMA_URL,
+            json={{
+                "model": os_tools.MODEL_NAME,
+                "prompt": prompt,
+                "stream": False
+            }},
+            timeout=180
+        )
+        response.raise_for_status()
+        result = response.json()
+        return {{"answer": result.get("response", ""), "status": "success"}}
+
+    except Exception as e:
+        print(f"[NOTES ASK ERROR] {{e}}")
+        return {{"status": "error", "message": str(e)}}

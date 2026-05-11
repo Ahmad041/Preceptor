@@ -8,6 +8,7 @@ import StoryUpload from './StoryUpload'
 import StoryPlayer from './StoryPlayer'
 import StoryLibrary from './StoryLibrary'
 import QuizStory from './QuizStory'
+import CompanyMode from './company/CompanyMode'
 import './App.css'
 
 function App() {
@@ -324,6 +325,8 @@ function App() {
       setSelectedMode(mode);
       if (mode === 'story') {
         setScreen('story_library');
+      } else if (mode === 'company') {
+        setScreen('company');
       } else {
         setScreen('chat');
       }
@@ -418,6 +421,10 @@ function App() {
         setScreen('story_library');
       }}
     />;
+  }
+
+  if (screen === 'company') {
+    return <CompanyMode onBack={() => setScreen('menu')} />;
   }
 
   return (

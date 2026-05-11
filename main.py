@@ -4,6 +4,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
 import requests
+import datetime
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
 import base64
 import os
 import asyncio
@@ -18,6 +21,10 @@ import google.generativeai as genai
 from PIL import ImageGrab
 import psutil
 import os_tools
+from agent_tools import process_agent_command_with_tools
+import agent_logger
+from notes_engine import notes_index, build_note_metadata, get_watched_folders, add_watched_folder, remove_watched_folder
+from embedding_engine import embedding_engine
 
 load_dotenv()
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
@@ -38,6 +45,7 @@ else:
 # --- Library untuk membaca dokumen ---
 import PyPDF2
 from docx import Document as DocxDocument
+import docx2pdf
 
 # --- SURAT IZIN KHUSUS UNTUK KOMPOR PYTORCH 2.6+ ---
 import torch
@@ -66,6 +74,48 @@ app.add_middleware(
 )
 
 # ============================================================
+# INITIALIZE NOTES & EMBEDDING ENGINE
+# ============================================================
+@app.on_event("startup")
+async def startup_event():
+    print("\n[SISTEM] Initializing Company Mode...")
+    
+    # 1. Load notes index from cache or scan
+    if not notes_index.load_cache():
+        notes_index.scan_all()
+    
+    # 2. Background embedding generation (so startup is not blocked)
+    asyncio.create_task(initialize_embeddings())
+
+async def initialize_embeddings():
+    print("[SISTEM] Generating/Updating Note Embeddings...")
+    try:
+        embedding_engine.embed_notes(notes_index)
+        print("[SISTEM] [OK] Note Embeddings ready!")
+    except Exception as e:
+        print(f"[WARNING] Gagal generate embeddings: {e}")
+
+# ============================================================
+# NOTE MODELS
+# ============================================================
+class NoteCreate(BaseModel):
+    title: str
+    content: str = ""
+    folder: Optional[str] = None
+    tags: Optional[List[str]] = None
+
+class NoteUpdate(BaseModel):
+    content: str
+
+class NoteAsk(BaseModel):
+    question: str
+    note_id: Optional[str] = None
+
+class DeepSearchRequest(BaseModel):
+    query: str
+    include_web: bool = True
+
+# ============================================================
 # 1. INISIALISASI QWEN3-TTS (Voice Cloning Mode)
 # ============================================================
 QWEN_TTS_MODEL = None
@@ -82,7 +132,7 @@ try:
         torch_dtype=torch.bfloat16,
         attn_implementation="sdpa",  # PyTorch built-in SDPA — lebih cepat tanpa install apapun
     )
-    print("[SISTEM] \u2705 Qwen3-TTS berhasil dimuat dengan SDPA! \U0001f3a4")
+    print("[SISTEM] [OK] Qwen3-TTS berhasil dimuat dengan SDPA!")
 except Exception as e:
     print(f"[WARNING] Gagal memuat Qwen3-TTS dengan SDPA: {e}")
     print("[SISTEM] Mencoba tanpa SDPA...")
@@ -94,7 +144,7 @@ except Exception as e:
             device_map=device_tts,
             torch_dtype=torch.bfloat16,
         )
-        print("[SISTEM] \u2705 Qwen3-TTS berhasil dimuat (tanpa SDPA)! \U0001f3a4")
+        print("[SISTEM] [OK] Qwen3-TTS berhasil dimuat (tanpa SDPA)!")
     except Exception as e2:
         print(f"[WARNING] Gagal memuat Qwen3-TTS: {e2}")
         QWEN_TTS_MODEL = None
@@ -202,9 +252,9 @@ def muat_memori_jangka_panjang():
                 data_memori = json.load(f)
             rag_store = [item for item in rag_store if item["nama"] != "Memori Obrolan"]
             rag_store.extend(data_memori)
-            print(f"[MEMORI] ✅ Berhasil memuat {len(data_memori)} ingatan masa lalu dari {MEMORY_FILE}")
+            print(f"[MEMORI] Berhasil memuat {len(data_memori)} ingatan masa lalu dari {MEMORY_FILE}")
         except Exception as e:
-            print(f"[MEMORI ERROR] Gagal memuat file memori: {e}")
+            print(f"[MEMORI ERROR] Gagal memuat file memori: {str(e)}")
 
 # Panggil fungsi ini saat server baru menyala!
 muat_memori_jangka_panjang()
@@ -475,6 +525,166 @@ async def execute_tool_api(data: ExecuteToolRequest):
         
     return {"status": "gagal", "error": "Tool tidak valid"}
 
+# ============================================================
+# AGENT MISSION CONTROL ENDPOINT
+# ============================================================
+
+class AgentCommand(BaseModel):
+    agent_id: str
+    command: str
+    conversation: Optional[List[dict]] = None
+
+@app.post("/api/agent/command")
+async def agent_command_api(data: AgentCommand):
+    """Memproses perintah untuk agent tertentu berdasarkan persona — dengan Tool Calling"""
+    try:
+        persona_path = os.path.join("personas", f"{data.agent_id}.md")
+        if not os.path.exists(persona_path):
+            return {"status": "gagal", "error": f"Persona for {data.agent_id} not found"}
+            
+        with open(persona_path, "r", encoding="utf-8") as f:
+            persona_content = f.read()
+        
+        # === REAL-TIME LOGGING ===
+        agent_logger.set_agent_status(data.agent_id, "processing")
+        agent_logger.record_command(data.agent_id)
+        cmd_preview = data.command[:60] if data.command else "(conversation)"
+        agent_logger.log_activity(data.agent_id, f"Received: {cmd_preview}", "info")
+        
+        # Build messages — gunakan conversation history jika ada
+        messages = [{"role": "system", "content": ""}]  # placeholder, akan di-replace oleh agent_tools
+        if data.conversation and len(data.conversation) > 0:
+            messages.extend(data.conversation)
+        else:
+            messages.append({"role": "user", "content": data.command})
+        
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "HTTP-Referer": "http://localhost:3000",
+            "X-Title": "Agent Office Mission Control",
+            "Content-Type": "application/json"
+        }
+        
+        agent_logger.log_activity(data.agent_id, "Connecting to AI model...", "system")
+        
+        # Gunakan tool-calling loop dari agent_tools
+        ai_response = await process_agent_command_with_tools(
+            persona_content=persona_content,
+            messages=messages,
+            headers=headers,
+            model=OPENROUTER_MODEL,
+            max_tool_rounds=3,
+            agent_id=data.agent_id
+        )
+        
+        agent_logger.log_activity(data.agent_id, "Response generated OK", "success")
+        agent_logger.set_agent_status(data.agent_id, "done")
+        
+        # --- TOKEN TRACKING ---
+        # Hitung estimasi token (input + output)
+        # Sederhana: (jumlah karakter / 4) * 1.3
+        input_text = data.command or ""
+        for msg in data.conversation or []:
+            input_text += msg.get("content", "")
+        
+        # Estimasi token input & output
+        in_tokens = len(input_text) // 3
+        out_tokens = len(ai_response) // 3
+        
+        agent_logger.log_token_usage(data.agent_id, in_tokens, out_tokens)
+        # ----------------------
+        
+        return {
+            "status": "berhasil",
+            "agent_id": data.agent_id,
+            "response": ai_response
+        }
+    except Exception as e:
+        print(f"[AGENT ERROR] Gagal memproses perintah: {e}")
+        agent_logger.log_activity(data.agent_id, f"ERROR: {str(e)[:80]}", "error")
+        agent_logger.set_agent_status(data.agent_id, "error")
+        return {"status": "gagal", "error": str(e)}
+
+
+@app.get("/api/system/stats")
+async def get_system_stats():
+    """Real-time system stats — CPU, RAM, Disk, Network, Uptime"""
+    stats = agent_logger.get_system_stats()
+    active, total = agent_logger.get_active_agent_count()
+    stats["active_agents"] = active
+    stats["total_agents"] = total
+    return stats
+
+
+@app.get("/api/agent/activity")
+async def get_all_agent_activity():
+    """Get logs, status, activity level, dan sources semua agent sekaligus."""
+    agent_ids = ["soft", "docs", "mon", "scout", "analyst", "content", "lead"]
+    result = {}
+    for aid in agent_ids:
+        result[aid] = {
+            "logs": agent_logger.get_agent_logs(aid, limit=5),
+            "status": agent_logger.get_agent_status(aid),
+            "activity": agent_logger.get_activity_level(aid),
+            "sources": agent_logger.get_agent_sources(aid)
+        }
+    return result
+
+
+@app.get("/api/system/finance")
+async def get_system_finance():
+    """Get persistent finance data untuk stats dashboard."""
+    return agent_logger.load_finance()
+
+
+@app.get("/api/system/capture-status")
+async def get_capture_status():
+    """Cek apakah ada permintaan capture dari agent."""
+    return {"requested": agent_logger.is_capture_requested()}
+
+
+@app.delete("/api/agent/sources/{agent_id}")
+async def delete_agent_source(agent_id: str, url: str):
+    """Menghapus sumber referensi tertentu dari list agent."""
+    agent_logger.delete_source(agent_id, url)
+    return {"status": "ok"}
+
+
+@app.post("/api/system/capture-clear")
+async def clear_capture_status():
+    """Hapus flag permintaan capture setelah diproses."""
+    agent_logger.clear_capture_request()
+    return {"status": "ok"}
+
+
+@app.post("/api/upload-capture")
+
+async def upload_capture(file: UploadFile = File(...)):
+    """Menerima screenshot HD dari Knowledge Graph."""
+    try:
+        CAPTURE_DIR = os.path.join("data", "captures")
+        os.makedirs(CAPTURE_DIR, exist_ok=True)
+        
+        # Simpan sebagai capture.png untuk kemudahan akses oleh agent
+        filename = "capture.png"
+        file_path = os.path.join(CAPTURE_DIR, filename)
+        
+        with open(file_path, "wb") as buffer:
+            buffer.write(await file.read())
+            
+        print(f"[SISTEM] Screenshot HD berhasil disimpan: {file_path}")
+        return {"status": "berhasil", "path": file_path, "filename": filename}
+    except Exception as e:
+        print(f"[ERROR] Gagal upload capture: {e}")
+        return {"status": "gagal", "error": str(e)}
+
+
+@app.get("/api/system/graph-intelligence")
+async def get_graph_intelligence():
+    """Get structural analysis and intelligence from knowledge graph."""
+    return notes_index.get_graph_intelligence()
+
+
 @app.post("/api/chat")
 async def chat_dengan_ai(data: PesanMasuk):
     # 1. CEK DULU MENGGUNAKAN OLLAMA ROUTER LOKAL
@@ -726,7 +936,7 @@ async def chat_dengan_ai(data: PesanMasuk):
 
                 # Simpan wav pertama dari list ke file
                 sf.write(suara_hasil, wavs[0], sample_rate)
-                print("[PROSES] \u2705 Qwen3-TTS berhasil membuat suara!")
+                print("[PROSES] [OK] Qwen3-TTS berhasil membuat suara!")
 
                 with open(suara_hasil, "rb") as file_audio:
                     kaset_base64 = base64.b64encode(file_audio.read()).decode("utf-8")
@@ -764,6 +974,16 @@ async def get_system_status():
         return {"cpu": cpu_usage, "ram": ram_usage}
     except Exception as e:
         return {"cpu": 0, "ram": 0, "error": str(e)}
+
+@app.get("/api/system/projects-stats")
+async def get_projects_stats():
+    """Fetch project statistics from the notes index."""
+    try:
+        stats = notes_index.get_project_stats()
+        return stats
+    except Exception as e:
+        print(f"[ERROR] Failed to fetch project stats: {e}")
+        return []
 
 
 # ============================================================
@@ -1388,3 +1608,495 @@ Format respons JSON:
     except Exception as e:
         print(f"[STORY QUIZ ERROR] {e}")
         return {"status": "gagal", "pesan": str(e)}
+# ============================================================
+# COMPANY MODE API ENDPOINTS (BOCCHI NOTES)
+# ============================================================
+
+@app.get("/api/notes")
+async def list_notes(root: Optional[str] = None, tag: Optional[str] = None):
+    return notes_index.list_notes(root_folder=root, tag=tag)
+
+@app.get("/api/notes/folders")
+async def get_folder_tree():
+    return notes_index.get_folder_tree()
+
+@app.get("/api/notes/tags")
+async def get_tags():
+    return notes_index.get_all_tags()
+
+@app.get("/api/notes/graph")
+async def get_graph():
+    graph_data = notes_index.get_graph_data()
+    # Tambahkan 2D positions dari embedding engine
+    positions = embedding_engine.get_graph_positions()
+    
+    for node in graph_data["nodes"]:
+        pos = positions.get(node["id"], [0, 0])
+        node["x"] = pos[0]
+        node["y"] = pos[1]
+        
+    return graph_data
+
+# ============================================================
+# WATCHED FOLDERS API (Dynamic folder management)
+# ============================================================
+
+@app.get("/api/folders")
+async def list_folders():
+    """List all watched folders."""
+    folders = get_watched_folders()
+    return {
+        "folders": [
+            {
+                "path": f,
+                "name": os.path.basename(f) or f,
+                "exists": os.path.isdir(f)
+            }
+            for f in folders
+        ]
+    }
+
+class FolderRequest(BaseModel):
+    path: str
+
+@app.post("/api/folders")
+async def add_folder(req: FolderRequest):
+    """Add a new watched folder."""
+    if not os.path.isdir(req.path):
+        raise HTTPException(status_code=400, detail=f"Folder not found: {req.path}")
+    success = add_watched_folder(req.path)
+    if not success:
+        raise HTTPException(status_code=409, detail="Folder already exists in watched list")
+    # Re-index after adding
+    notes_index.full_reindex()
+    return {"status": "added", "path": req.path}
+
+@app.delete("/api/folders")
+async def delete_folder(req: FolderRequest):
+    """Remove a watched folder."""
+    success = remove_watched_folder(req.path)
+    if not success:
+        raise HTTPException(status_code=404, detail="Folder not found in watched list")
+    # Re-index after removing
+    notes_index.full_reindex()
+    return {"status": "removed", "path": req.path}
+
+@app.get("/api/notes/{note_id:path}")
+async def get_note(note_id: str):
+    # Penanganan khusus untuk node Matahari (memori bocchi)
+    # Support multiple formats including those used by the graph or frontend
+    system_ids = ["@[memori_bocchi.json]", "memori_bocchi.json", "Matahari", "sun"]
+    if any(sid.lower() == note_id.lower() for sid in system_ids) or "memori_bocchi" in note_id.lower():
+        content = "## Matahari System Core\n\nIni adalah pusat kesadaran sistem. Memori Bocchi menyimpan semua interaksi dan pembelajaran."
+        
+        # Cek file fisik jika ada
+        memory_path = "memori_bocchi.json"
+        if os.path.exists(memory_path):
+            try:
+                size = os.path.getsize(memory_path)
+                size_kb = size / 1024
+                content += f"\n\n**Status Memori:**\n- Ukuran: {size_kb:.2f} KB\n- Lokasi: `{os.path.abspath(memory_path)}`"
+            except Exception:
+                pass
+        
+        return {
+            "id": "memori_bocchi.json",
+            "title": "Matahari (Memori Bocchi)",
+            "content": content,
+            "tags": ["system", "core", "sun"],
+            "folder": "System",
+            "similar_notes": [],
+            "backlinks": [],
+            "outgoing_links": []
+        }
+
+    target_id = note_id
+    if note_id not in notes_index.notes:
+        target_id = notes_index.path_to_id.get(os.path.normpath(note_id).lower())
+    if not target_id: raise HTTPException(status_code=404, detail="Note tidak ditemukan")
+    note = notes_index.get_note(target_id)
+    note_id = target_id
+    if not note:
+        raise HTTPException(status_code=404, detail="Note tidak ditemukan")
+    
+    # Tambahkan similar notes & backlinks
+    note["similar_notes"] = embedding_engine.find_similar(note_id)
+    note["backlinks"] = notes_index.get_backlinks(note_id)
+    note["outgoing_links"] = notes_index.get_outgoing_links(note_id)
+    
+    return note
+
+@app.post("/api/notes")
+async def create_note(data: NoteCreate):
+    meta = notes_index.create_note(data.title, data.content, data.folder, data.tags)
+    if meta:
+        # Update embedding in background
+        asyncio.create_task(initialize_embeddings())
+    return meta
+
+@app.put("/api/notes/{note_id:path}")
+async def update_note(note_id: str, data: NoteUpdate):
+    target_id = note_id
+    if note_id not in notes_index.notes:
+        target_id = notes_index.path_to_id.get(os.path.normpath(note_id).lower())
+    if not target_id: raise HTTPException(status_code=404, detail="Note tidak ditemukan")
+    meta = notes_index.update_note(target_id, data.content)
+    if not meta:
+        raise HTTPException(status_code=404, detail="Note tidak ditemukan")
+    
+    # Update embedding in background
+    asyncio.create_task(initialize_embeddings())
+    return meta
+
+@app.delete("/api/notes/{note_id:path}")
+async def delete_note(note_id: str):
+    target_id = note_id
+    if note_id not in notes_index.notes:
+        target_id = notes_index.path_to_id.get(os.path.normpath(note_id).lower())
+    if not target_id: return {"status": "not found"}
+    success = notes_index.delete_note(target_id)
+    if success:
+        embedding_engine.remove_note(note_id)
+    return {"status": "success" if success else "failed"}
+
+@app.get("/api/notes/export-pdf/{note_id:path}")
+async def export_note_to_pdf(note_id: str):
+    """Export note content to PDF using python-docx and docx2pdf."""
+    target_id = note_id
+    if note_id not in notes_index.notes:
+        target_id = notes_index.path_to_id.get(os.path.normpath(note_id).lower())
+    if not target_id: 
+        raise HTTPException(status_code=404, detail="Note tidak ditemukan")
+    
+    note = notes_index.get_note(target_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note tidak ditemukan")
+    
+    try:
+        # Create temp docx
+        temp_dir = os.path.join(os.getcwd(), "data", "temp_export")
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        # Bersihkan nama file dari karakter aneh
+        safe_title = re.sub(r'[^\w\s-]', '', note["title"]).strip().replace(' ', '_')
+        docx_path = os.path.abspath(os.path.join(temp_dir, f"{safe_title}.docx"))
+        pdf_path = os.path.abspath(os.path.join(temp_dir, f"{safe_title}.pdf"))
+        
+        doc = DocxDocument()
+        doc.add_heading(note["title"], 0)
+        
+        # Pisahkan konten berdasarkan baris untuk paragraf
+        for line in note["content"].split('\n'):
+            if line.strip():
+                doc.add_paragraph(line)
+        
+        doc.save(docx_path)
+        
+        # Convert to PDF — Perlu MS Word di Windows
+        print(f"[EXPORT] Converting {docx_path} to {pdf_path}...")
+        
+        # Import COM secara lokal untuk keamanan thread
+        import pythoncom
+        pythoncom.CoInitialize()
+        
+        docx2pdf.convert(docx_path, pdf_path)
+        
+        if os.path.exists(pdf_path):
+            print(f"[EXPORT] ✅ PDF Ready: {pdf_path}")
+            return FileResponse(pdf_path, filename=f"{note['title']}.pdf", media_type="application/pdf")
+        else:
+            raise HTTPException(status_code=500, detail="Konversi PDF gagal (file tidak tercipta)")
+            
+    except Exception as e:
+        print(f"[EXPORT ERROR] Detail: {e}")
+        # Jika gagal konversi, minimal beri tahu alasan teknisnya (misal: Word tidak ada)
+        raise HTTPException(status_code=500, detail=f"Gagal export PDF: {str(e)}")
+
+@app.get("/api/notes/search/semantic")
+async def semantic_search(q: str, limit: int = 10):
+    results = embedding_engine.semantic_search(q, top_k=limit)
+    # Map back to metadata
+    full_results = []
+    for res in results:
+        meta = notes_index.notes.get(res["id"])
+        if meta:
+            full_results.append({**meta, "similarity": res["similarity"]})
+    return full_results
+
+@app.get("/api/notes/search/text")
+async def text_search(q: str, limit: int = 20):
+    return notes_index.search_text(q, max_results=limit)
+
+@app.get("/api/notes/daily/today")
+async def get_daily_today():
+    note = notes_index.get_daily_note()
+    if not note:
+        note = notes_index.create_daily_note()
+    return note
+
+@app.post("/api/notes/ask")
+async def ask_bocchi_notes(data: NoteAsk):
+    try:
+        # RAG implementation
+        context = ""
+        
+        # 1. Cari konteks yang relevan
+        if data.note_id:
+            # Jika user sedang buka note tertentu, gunakan note itu sebagai konteks utama
+            note = notes_index.get_note(data.note_id)
+            if note:
+                context = f"--- KONTEKS NOTE SAAT INI ({note['title']}) ---\n{note['content']}\n\n"
+        
+        # 2. Tambah konteks dari semantic search
+        similar = embedding_engine.semantic_search(data.question, top_k=3)
+        if similar:
+            context += "--- KONTEKS TERKAIT LAINNYA ---\n"
+            for res in similar:
+                if res["id"] != data.note_id:
+                    note = notes_index.get_note(res["id"])
+                    if note:
+                        context += f"Note: {note['title']}\n{note['content'][:1000]}\n\n"
+
+        # 3. Kirim ke Ollama
+        prompt = f"""Kamu adalah Hitori 'Bocchi' Gotoh dari anime Bocchi the Rock!. Kamu sangat pemalu, sering panik, tapi sangat peduli.
+Gunakan data catatan (notes) di bawah ini untuk menjawab pertanyaan Senpai. 
+Jika jawabannya tidak ada di catatan, bilang saja sejujurnya dengan gaya bicaramu yang gugup tapi berusaha membantu.
+
+KONTEKS CATATAN:
+{context}
+
+PERTANYAAN SENPAI:
+{data.question}
+
+Jawablah dengan gaya Bocchi (gunakan s-s-sperti ini jika gugup, panggil user sebagai Senpai)."""
+
+        response = requests.post(
+            os_tools.OLLAMA_URL,
+            json={
+                "model": os_tools.MODEL_NAME,
+                "prompt": prompt,
+                "stream": False
+            },
+            timeout=180
+        )
+        response.raise_for_status()
+        result = response.json()
+        return {"answer": result.get("response", ""), "status": "success"}
+
+    except Exception as e:
+        print(f"[NOTES ASK ERROR] {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.post("/api/notes/deep-search")
+async def deep_search(data: DeepSearchRequest):
+    try:
+        # 1. Local Semantic Search
+        local_results = embedding_engine.semantic_search(data.query, top_k=5)
+        local_context = ""
+        local_node_ids = []
+        
+        for res in local_results:
+            note = notes_index.get_note(res["id"])
+            if note:
+                local_context += f"Note: {note['title']}\n{note['content'][:1000]}\n\n"
+                local_node_ids.append(res["id"])
+                # Graph Expansion: Add neighbors
+                neighbors = notes_index.get_outgoing_links(res["id"]) + notes_index.get_backlinks(res["id"])
+                for neighbor in neighbors[:2]: # Limit neighbors
+                    n_id = neighbor.get("id") or neighbor.get("to") or neighbor.get("from")
+                    if n_id and n_id not in local_node_ids:
+                        neighbor_note = notes_index.get_note(n_id)
+                        if neighbor_note:
+                            local_context += f"Related Note (Graph): {neighbor_note['title']}\n{neighbor_note['content'][:500]}\n\n"
+                            local_node_ids.append(n_id)
+
+        # 2. Web Search
+        web_context = ""
+        web_results_list = []
+        if data.include_web:
+            print(f"[DEEP SEARCH] Searching web for: {data.query}")
+            web_raw = os_tools.cari_di_internet(data.query)
+            web_context = f"--- WEB SEARCH RESULTS ---\n{web_raw}\n"
+            # Extract URLs for the frontend
+            web_results_list = re.findall(r'URL: (https?://\S+)', web_raw)
+
+        # 3. LLM Synthesis
+        prompt = f"""Kamu adalah Hitori 'Bocchi' Gotoh. Gunakan data catatan internal dan hasil pencarian web di bawah ini untuk memberikan penjelasan mendalam kepada Senpai.
+        
+        BANDINGKAN apa yang ada di catatan internal dengan apa yang ada di internet jika relevan.
+        Gaya bicara: Sangat pemalu, gugup (gagap s-s-seperti ini), panggil user 'Senpai'.
+        
+        CATATAN INTERNAL KITA:
+        {local_context if local_context else "Tidak ada catatan internal yang relevan."}
+        
+        HASIL PENCARIAN WEB:
+        {web_context if web_context else "Tidak mencari di web."}
+        
+        PERTANYAAN SENPAI: {data.query}
+        """
+
+        response = requests.post(
+            os_tools.OLLAMA_URL,
+            json={
+                "model": os_tools.MODEL_NAME,
+                "prompt": prompt,
+                "stream": False
+            },
+            timeout=240
+        )
+        response.raise_for_status()
+        result = response.json()
+        insight = result.get("response", "")
+
+        return {
+            "insight": insight,
+            "local_node_ids": list(set(local_node_ids)),
+            "web_results": web_results_list,
+            "status": "success"
+        }
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+# ============================================================
+# PROJECT REPORTING API (Phase 4)
+# ============================================================
+
+@app.get("/api/reports/templates")
+async def list_report_templates():
+    """List available report structures."""
+    return {
+        "templates": [
+            {
+                "id": "weekly-sync",
+                "name": "Weekly Sync Report",
+                "description": "Ringkasan aktivitas tim dan progres mingguan.",
+                "icon": "Calendar"
+            },
+            {
+                "id": "monthly-audit",
+                "name": "Monthly Financial Audit",
+                "description": "Analisis mendalam penggunaan Kessoku Points dan milestone.",
+                "icon": "BarChart2"
+            },
+            {
+                "id": "project-summary",
+                "name": "Project Strategic Overview",
+                "description": "Ringkasan tingkat tinggi untuk folder proyek tertentu.",
+                "icon": "Target"
+            }
+        ]
+    }
+
+class ReportGenerateRequest(BaseModel):
+    template_id: str
+    folder: Optional[str] = None
+    user_nama: str = "Senpai"
+
+@app.post("/api/reports/generate")
+async def generate_project_report(data: ReportGenerateRequest):
+    """Generate professional Markdown reports using AI synthesis."""
+    try:
+        print(f"[REPORT] Generating {data.template_id} for {data.user_nama}...")
+        
+        # 1. Gather Context
+        finance_data = agent_logger.load_finance()
+        agent_ids = ["lead", "soft", "docs", "mon", "scout", "analyst", "content"]
+        all_logs = {}
+        for aid in agent_ids:
+            all_logs[aid] = agent_logger.get_agent_logs(aid, limit=10)
+            
+        # Context from notes
+        recent_notes = notes_index.list_notes(root_folder=data.folder, limit=10)
+        notes_context = ""
+        for n in recent_notes:
+            notes_context += f"- {n['title']} (Tag: {', '.join(n['tags'])})\n"
+
+        # 2. Prepare Prompt based on template
+        if data.template_id == "weekly-sync":
+            prompt_type = "Weekly Mission Sync Report"
+            specific_focus = "Fokus pada progres tugas, blocker, dan rencana minggu depan."
+        elif data.template_id == "monthly-audit":
+            prompt_type = "Monthly Neural Audit"
+            specific_focus = "Fokus pada statistik Kessoku Points, efisiensi tim, dan milestone besar."
+        else:
+            prompt_type = "Project Strategic Brief"
+            specific_focus = "Fokus pada gambaran umum proyek dan status arsitektur."
+
+        prompt = f"""Kamu adalah Bocchi (Hitori Gotou), Documentation Specialist yang bertugas menyusun laporan resmi perusahaan.
+Meskipun kamu sangat pemalu dan gugup, kamu harus membuat laporan ini terlihat sangat profesional namun tetap memiliki sentuhan persona dirimu (sedikit gagap di intro/outro).
+
+Tipe Laporan: {prompt_type}
+Fokus: {specific_focus}
+
+DATA KONTEKS:
+1. FINANCE (Kessoku Points): {json.dumps(finance_data, indent=2)}
+2. AKTIVITAS AGENT TERAKHIR: {json.dumps(all_logs, indent=2)}
+3. CATATAN TERBARU:
+{notes_context}
+
+INSTRUKSI FORMATTING:
+- Gunakan Markdown yang cantik.
+- Gunakan elemen Cyberpunk (misal: [STRICTLY CONFIDENTIAL], Neural Link Status: OK).
+- Buat tabel jika ada data angka.
+- Jangan terlalu panjang, padat dan informatif.
+- Gunakan bahasa Indonesia yang campur dengan istilah teknis English.
+
+Jawab hanya dengan konten Markdown laporan tersebut."""
+
+        # 3. Call LLM
+        response = requests.post(
+            os_tools.OLLAMA_URL,
+            json={
+                "model": os_tools.MODEL_NAME,
+                "prompt": prompt,
+                "stream": False,
+                "options": {"temperature": 0.4}
+            },
+            timeout=300
+        )
+        response.raise_for_status()
+        report_md = response.json().get("response", "")
+
+        return {
+            "status": "success",
+            "content": report_md,
+            "title": f"Report_{data.template_id}_{datetime.datetime.now().strftime('%Y%m%d')}"
+        }
+
+    except Exception as e:
+        print(f"[REPORT ERROR] {e}")
+        return {"status": "error", "message": str(e)}
+
+# ============================================================
+# CALENDAR ENDPOINTS
+# ============================================================
+@app.get("/api/calendar/events")
+async def get_calendar_events():
+    try:
+        if not os.path.exists("token.json"):
+            return {"status": "error", "message": "token.json not found. Please authenticate first."}
+        
+        # Load credentials from token.json
+        creds = Credentials.from_authorized_user_file("token.json", ["https://www.googleapis.com/auth/calendar.readonly"])
+        service = build("calendar", "v3", credentials=creds)
+        
+        # Fetch upcoming 10 events
+        now = datetime.datetime.utcnow().isoformat() + "Z"  # 'Z' indicates UTC time
+        events_result = (
+            service.events()
+            .list(
+                calendarId="primary",
+                timeMin=now,
+                maxResults=10,
+                singleEvents=True,
+                orderBy="startTime",
+            )
+            .execute()
+        )
+        events = events_result.get("items", [])
+        return {"status": "success", "events": events}
+    except Exception as e:
+        print(f"[CALENDAR ERROR] {e}")
+        return {"status": "error", "message": str(e)}
+

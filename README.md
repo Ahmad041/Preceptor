@@ -1,26 +1,27 @@
 # Preceptor (Bocchi AI Desktop Assistant) 🎸
 
-> Asisten desktop AI bertema Bocchi the Rock yang interaktif. Menghadirkan komunikasi hidup dengan integrasi suara RVC, fitur Story Mode ala Visual Novel yang digerakkan oleh LLM lokal (Ollama), serta sistem Hybrid Q&A cerdas. Dirancang untuk pengalaman roleplay yang mendalam, responsif, dan personal langsung dari desktop Windows kamu.
+> Asisten desktop AI bertema Bocchi the Rock yang interaktif. Menghadirkan komunikasi hidup dengan integrasi suara RVC, fitur Story Mode ala Visual Novel yang digerakkan oleh LLM lokal (Ollama), serta sistem Multi-Agent cerdas untuk produktivitas. Dirancang untuk pengalaman roleplay yang mendalam sekaligus asisten kerja yang powerful langsung dari desktop Windows kamu.
 
 ## ✨ Fitur Utama
 
 - **🗣️ AI Karakter Interaktif**: Ngobrol dan bermain peran (roleplay) secara natural dengan asisten bertema Bocchi.
 - **🎙️ Sintesis Suara (RVC & Qwen3-TTS)**: Respons suara yang terasa nyata menggunakan *Retrieval-based Voice Conversion* (RVC) dan integrasi terbaru Qwen3-TTS untuk kloning suara yang lebih presisi.
-- **📖 Story Mode & Library**: Unggah dokumen, dan AI akan otomatis membuat cerita interaktif bergaya visual novel. Kelola semua ceritamu di dalam **Story Library**.
-- **🧠 Quiz Mode**: Tantang dirimu dengan kuis interaktif yang dihasilkan secara otomatis dari cerita yang kamu buat.
-- **🎮 Loading Mini-Games**: Bosan menunggu AI berpikir? Mainkan mini-game (seperti *Social Runner*) sambil menunggu proses generasi teks atau suara selesai.
-- **🎬 Animasi Smooth**: Integrasi animasi berkualitas tinggi (berbasis Mate-Engine) untuk ekspresi Bocchi yang lebih dinamis.
-- **🎵 Background Music**: Dukungan musik latar untuk membangun suasana saat berinteraksi atau bermain game.
-- **💻 Local First**: Berjalan sepenuhnya secara lokal menggunakan **Ollama (Qwen)** untuk pemrosesan AI yang cepat, privat, dan offline-friendly.
+- **🏢 Agent Office (Multi-Agent System)**: Tim agen AI spesialis (Analyst, Content, Docs, Scout, dll) yang dilengkapi dengan "tangan" (Tools) untuk mencari web, membaca file, mengambil screenshot, dan mendelegasikan tugas.
+- **🕸️ Neural Knowledge Graph**: Visualisasi 3D dari semua catatan dan pengetahuanmu menggunakan *semantic embedding* (multilingual-e5-small) untuk pencarian dan pemetaan ide yang cerdas.
+- **💼 Company Mode**: Dashboard profesional terintegrasi dengan Google Calendar, monitoring anggaran, dan manajemen sumber daya riset.
+- **📄 Advanced Doc Automation**: Pembuatan dokumen profesional (.docx & .pdf) secara otomatis dengan berbagai preset (Laporan, Skripsi, Surat) langsung dari percakapan dengan agen.
+- **📖 Story Mode & Library**: Unggah dokumen, dan AI akan otomatis membuat cerita interaktif bergaya visual novel.
+- **🎮 Loading Mini-Games**: Mainkan mini-game (seperti *Social Runner*) sambil menunggu proses AI selesai.
 
 ## 🛠️ Teknologi yang Digunakan
 
 - **Backend**: Python 3.10+, FastAPI
-- **Frontend**: React, Vite, Tailwind CSS, Framer Motion
+- **Frontend**: React, Vite, Three.js (3D Graph), Tailwind CSS, Framer Motion
 - **AI & ML**: 
-  - **LLM**: Ollama (Qwen 2.5/3.5)
+  - **LLM**: Ollama (Qwen 2.5/3.5), OpenRouter (Gemini/Claude)
+  - **Embedding**: `intfloat/multilingual-e5-small` (Neural Network)
   - **TTS**: Qwen3-TTS, RVC (Retrieval-based Voice Conversion)
-- **Utilities**: PyPDF2, python-docx (untuk pemrosesan dokumen)
+- **Utilities**: `sentence-transformers`, `numpy`, `python-docx`, `requests`
 
 ## 🚀 Cara Menjalankan
 
@@ -46,8 +47,8 @@
 
    # Instal dependensi utama
    pip install -r requirements.txt 
-   # Catatan: Jika requirements.txt belum ada, instal manual:
-   # pip install fastapi uvicorn python-multipart torch numpy soundfile requests python-dotenv PyPDF2 python-docx
+   # Tambahan untuk fitur Neural:
+   pip install sentence-transformers numpy scikit-learn
    ```
 
 3. **Setup Frontend:**
@@ -72,14 +73,17 @@
 
 ## 📝 Catatan Penting
 
-- **File Model**: Karena batasan ukuran GitHub, file model RVC (`.pth`, `.index`) dan model Qwen3-TTS harus disiapkan secara manual di folder root atau folder model yang ditentukan.
-- **API Keys**: Gunakan file `.env` untuk menyimpan API Key (seperti Gemini atau OpenRouter jika ingin menggunakan mode cloud). Jangan pernah membagikan file `.env` kamu.
+- **File Model**: Karena batasan ukuran GitHub, file model RVC (`.pth`, `.index`) dan model embedding harus disiapkan secara manual atau akan terunduh otomatis pada saat pertama kali dijalankan.
+- **API Keys**: Gunakan file `.env` untuk menyimpan API Key (OpenRouter/Google Calendar). Jangan pernah membagikan file `.env` kamu.
 - **Animasi**: File animasi disimpan di `frontend/public/animations/`.
 
 ## 🗺️ Roadmap / Rencana Mendatang
+- [x] Implementasi 3D Knowledge Graph & Semantic Search.
+- [x] Multi-Agent System dengan delegasi tugas.
+- [x] Integrasi Google Calendar.
 - [ ] Migrasi ke Aplikasi Desktop Native menggunakan **Electron**.
 - [ ] Fitur *Lazy Download* untuk model AI agar installer tetap ringan.
-- [ ] Penambahan lebih banyak mini-game saat loading.
+- [ ] Fitur Screen Interaction (AI bisa melihat layar secara real-time).
 
 ## 📄 Lisensi
 Proyek ini dibuat untuk tujuan edukasi, hobi, dan penggunaan pribadi.
