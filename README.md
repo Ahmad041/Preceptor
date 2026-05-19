@@ -159,6 +159,16 @@ Akses aplikasi langsung dari browser di alamat `http://localhost:5173`.
 
 ---
 
+## 🔗 Referensi & Inspirasi
+
+Proyek ini dikembangkan dengan terinspirasi serta mengadopsi konsep dari berbagai proyek open-source luar biasa berikut:
+- 🧬 [G0DM0D3](https://github.com/elder-plinius/G0DM0D3) - Acuan konsep asisten mandiri "God Mode" dengan tingkat optimasi mendalam.
+- 🎙️ [Mark-XXXIX](https://github.com/FatihMakes/Mark-XXXIX) - Inspirasi sistem asisten desktop interaktif dengan transisi animasi yang halus dan responsif.
+- 🏢 [the-delegation](https://github.com/arturitu/the-delegation) - Referensi utama arsitektur delegasi dinamis multi-agen dan simulasi visual visualisasi tugas.
+- 🔍 [Perplexica (Fork)](https://github.com/adi-dhulipala/Perplexica-Fork) - Pondasi pengembangan mesin pencari semantik cerdas untuk agen pelacak informasi (*Scout Agent*).
+
+---
+
 ## 📄 Lisensi
 Proyek ini dibuat untuk tujuan edukasi, hobi, dan penggunaan personal. Lisensi karakter Bocchi the Rock sepenuhnya dipegang oleh pencipta asli dan studio produksi terkait.
 
