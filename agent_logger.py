@@ -32,6 +32,9 @@ _agent_sources = defaultdict(lambda: deque(maxlen=20))
 # Global command counter per agent (for activity graph)
 _agent_command_counts = defaultdict(lambda: deque(maxlen=20))
 
+# Active focus modes per agent: { "agent_id": ["academic", "reddit"] }
+_agent_focus_modes = defaultdict(list)
+
 # Lock untuk thread safety
 _lock = threading.Lock()
 
@@ -70,6 +73,18 @@ def get_agent_status(agent_id: str) -> str:
         return _agent_status.get(agent_id, "standby")
 
 
+def set_agent_focus_modes(agent_id: str, modes: list):
+    """Set focus modes yang aktif untuk agent."""
+    with _lock:
+        _agent_focus_modes[agent_id] = list(modes) if modes else []
+
+
+def get_agent_focus_modes(agent_id: str) -> list:
+    """Get focus modes yang aktif untuk agent."""
+    with _lock:
+        return list(_agent_focus_modes.get(agent_id, []))
+
+
 # Domain blacklist for sources (Social Media, etc.)
 BLACKLIST_DOMAINS = [
     "instagram.com", "facebook.com", "tiktok.com", "twitter.com", "x.com", 
@@ -82,7 +97,16 @@ def log_source(agent_id: str, title: str, url: str):
     with _lock:
         # 1. Blacklist check
         hostname = url.lower()
-        if any(domain in hostname for domain in BLACKLIST_DOMAINS):
+        active_modes = _agent_focus_modes.get(agent_id, [])
+        
+        # Bypass domain blacklist based on active focus modes
+        effective_blacklist = list(BLACKLIST_DOMAINS)
+        if "reddit" in active_modes or "all" in active_modes or not active_modes:
+            effective_blacklist = [d for d in effective_blacklist if "reddit.com" not in d]
+        if "youtube" in active_modes or "all" in active_modes or not active_modes:
+            effective_blacklist = [d for d in effective_blacklist if "youtube.com" not in d]
+            
+        if any(domain in hostname for domain in effective_blacklist):
             return
 
         # 2. Hindari duplikat URL untuk agent yang sama

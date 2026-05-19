@@ -105,9 +105,6 @@ const AgentRoom = ({
                 </div>
             </div>
 
-            {/* Neon Border Effects */}
-            <div className="neon-line top"></div>
-            <div className="neon-line bottom"></div>
         </div>
     );
 };

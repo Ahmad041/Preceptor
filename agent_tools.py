@@ -12,9 +12,189 @@ Flow:
 import json
 import re
 import os
+import sys
+import subprocess
+import importlib
 import requests
 import asyncio
+import time as _time
+import httpx
 import agent_logger
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# ============================================================
+# MULTI-MODEL FALLBACK — AlphaEvolve Model Chain
+# ============================================================
+# Urutan prioritas model untuk agen Evolve:
+#   1. GPT-OSS-120B (OpenRouter, gratis)
+#   2. Qwen 2.5 72B (OpenRouter)
+#   3. Gemini 2.0 Flash (Google Generative AI langsung)
+#   4. Ollama qwen3.5:latest (Lokal)
+
+EVOLVE_MODEL_CHAIN = [
+    {
+        "provider": "openrouter",
+        "model": "openai/gpt-oss-120b:free",
+        "label": "GPT-OSS-120B (OpenRouter)"
+    },
+    {
+        "provider": "openrouter",
+        "model": "qwen/qwen-2.5-72b-instruct",
+        "label": "Qwen 2.5 72B (OpenRouter)"
+    },
+    {
+        "provider": "gemini",
+        "model": "gemini-2.0-flash",
+        "label": "Gemini 2.0 Flash (Google)"
+    },
+    {
+        "provider": "ollama",
+        "model": "qwen3.5:latest",
+        "label": "Qwen 3.5 (Ollama Lokal)"
+    }
+]
+
+OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"
+
+
+def _call_openrouter(messages: list, model: str, headers: dict, timeout: int = 90) -> dict:
+    """Panggil OpenRouter API. Return dict {content: str} atau raise Exception."""
+    payload = {"model": model, "messages": messages}
+    resp = requests.post(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers=headers,
+        json=payload,
+        timeout=timeout
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    content = data['choices'][0]['message']['content']
+    if not content or not content.strip():
+        raise ValueError("OpenRouter returned empty response")
+    return {"content": content}
+
+
+def _call_gemini(messages: list, model: str, timeout: int = 90) -> dict:
+    """Panggil Google Gemini langsung via google.generativeai. Return dict {content: str}."""
+    import google.generativeai as genai
+
+    api_key = os.getenv("GEMINI_API_KEY", "")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY tidak tersedia di .env")
+
+    genai.configure(
+        api_key=api_key,
+        client_options={"api_endpoint": "generativelanguage.googleapis.com"}
+    )
+
+    # Konversi messages format OpenAI -> Gemini
+    system_instruction = ""
+    gemini_contents = []
+    for msg in messages:
+        role = msg["role"]
+        text = msg["content"]
+        if role == "system":
+            system_instruction = text
+        elif role == "user":
+            gemini_contents.append({"role": "user", "parts": [{"text": text}]})
+        elif role == "assistant":
+            gemini_contents.append({"role": "model", "parts": [{"text": text}]})
+
+    gen_model = genai.GenerativeModel(
+        model_name=model,
+        system_instruction=system_instruction if system_instruction else None
+    )
+
+    response = gen_model.generate_content(
+        gemini_contents,
+        request_options={"timeout": timeout}
+    )
+    content = response.text
+    if not content or not content.strip():
+        raise ValueError("Gemini returned empty response")
+    return {"content": content}
+
+
+def _call_ollama(messages: list, model: str, timeout: int = 120) -> dict:
+    """Panggil Ollama lokal via /api/chat. Return dict {content: str}."""
+    from os_tools import ensure_ollama_running
+    ensure_ollama_running()
+
+    payload = {
+        "model": model,
+        "messages": messages,
+        "stream": False
+    }
+    resp = requests.post(OLLAMA_CHAT_URL, json=payload, timeout=timeout)
+    resp.raise_for_status()
+    data = resp.json()
+    content = data.get("message", {}).get("content", "")
+    if not content or not content.strip():
+        raise ValueError("Ollama returned empty response")
+    return {"content": content}
+
+
+def _call_llm_with_fallback(
+    messages: list,
+    model_chain: list,
+    headers: dict,
+    agent_id: str = "unknown"
+) -> str:
+    """
+    Coba panggil LLM sesuai urutan model_chain.
+    Jika model pertama gagal, otomatis fallback ke model berikutnya.
+    Return: content string dari model yang berhasil.
+    """
+    last_error = None
+
+    for i, candidate in enumerate(model_chain):
+        provider = candidate["provider"]
+        model = candidate["model"]
+        label = candidate["label"]
+
+        try:
+            print(f"[EVOLVE FALLBACK] [{i+1}/{len(model_chain)}] Mencoba: {label}...")
+            agent_logger.log_activity(
+                agent_id,
+                f"Trying model: {label} ({i+1}/{len(model_chain)})",
+                "system"
+            )
+
+            if provider == "openrouter":
+                result = _call_openrouter(messages, model, headers)
+            elif provider == "gemini":
+                result = _call_gemini(messages, model)
+            elif provider == "ollama":
+                result = _call_ollama(messages, model)
+            else:
+                raise ValueError(f"Unknown provider: {provider}")
+
+            # Berhasil!
+            print(f"[EVOLVE FALLBACK] ✅ Berhasil dengan: {label}")
+            agent_logger.log_activity(
+                agent_id,
+                f"✅ Model OK: {label}",
+                "success"
+            )
+            return result["content"]
+
+        except Exception as e:
+            last_error = e
+            print(f"[EVOLVE FALLBACK] ❌ Gagal ({label}): {e}")
+            agent_logger.log_activity(
+                agent_id,
+                f"❌ Model gagal: {label} — {str(e)[:60]}",
+                "error"
+            )
+            _time.sleep(1)  # Jeda sejenak sebelum coba model berikutnya
+            continue
+
+    # Semua model gagal
+    raise RuntimeError(
+        f"Semua {len(model_chain)} model gagal. Error terakhir: {last_error}"
+    )
 from os_tools import (
     cari_di_internet,
     baca_file,
@@ -24,12 +204,27 @@ from os_tools import (
     baca_halaman_web,
     cek_waktu,
     baca_sistem_info,
-    is_safe_path
+    is_safe_path,
+    jalankan_python,
+    jalankan_perintah_terminal,
+    analisa_saham_otomatis
 )
 from docx_tools import create_docx, list_presets, convert_to_pdf
 from PIL import ImageGrab
 import io
 import base64
+
+# Desktop Pilot — Override Mode tools
+from desktop_pilot import (
+    desktop_click,
+    desktop_type,
+    desktop_press,
+    desktop_hotkey,
+    desktop_scroll,
+    desktop_screenshot,
+    get_screen_info
+)
+from vision_loop import vision_engine
 
 # ============================================================
 # TOOL REGISTRY — Daftar tool yang bisa dipakai agent
@@ -84,6 +279,12 @@ AGENT_TOOLS = {
         "param": "kosong",
         "example": 'system_info("")'
     },
+    "analyze_stock": {
+        "function": analisa_saham_otomatis,
+        "description": "Mengambil data saham (harga, P/E, PEG, dll) lalu memberikan analisis scorecard otomatis untuk prediksi beli/jual.",
+        "param": "Simbol/ticker saham (string). Contoh: AAPL",
+        "example": 'analyze_stock("AAPL")'
+    },
     "screenshot": {
         "function": None,  # Special handler
         "description": "Mengambil screenshot layar pengguna saat ini",
@@ -125,7 +326,68 @@ AGENT_TOOLS = {
         "description": "Memberikan tugas ke agent spesifik (soft, docs, mon, scout, analyst, content). Kamu bisa memberikan instruksi detail untuk mereka kerjakan dan mendapatkan hasilnya.",
         "param": "agent_id|||instruksi — pisahkan agent_id dan instruksi dengan |||",
         "example": 'delegate_to_agent("soft|||Buatkan arsitektur database untuk aplikasi e-commerce.")'
-    }
+    },
+    "run_python": {
+        "function": jalankan_python,
+        "description": "Menjalankan kode Python atau file .py. Sangat berguna untuk menguji kode yang baru ditulis atau melakukan perhitungan kompleks. Gunakan ini untuk mode 'Self-Evolving' (Tulis -> Jalankan -> Evaluasi).",
+        "param": "konten kode python atau path file .py (string)",
+        "example": 'run_python("print(1+1)")'
+    },
+    "run_terminal": {
+        "function": jalankan_perintah_terminal,
+        "description": "Menjalankan perintah terminal/shell (CMD/PowerShell). Gunakan untuk menginstal library (pip install), mengecek status git, atau menjalankan skrip sistem.",
+        "param": "perintah terminal (string)",
+        "example": 'run_terminal("pip install requests")'
+    },
+    "reload_module": {
+        "function": None,  # Special handler
+        "description": "Hot-reload modul Python yang baru saja diubah agar perubahan langsung aktif TANPA restart server. Gunakan SETELAH kamu menulis perubahan ke file .py menggunakan write_file.",
+        "param": "nama modul tanpa .py (string). Modul yang bisa di-reload: os_tools, agent_tools, agent_logger, notes_engine, embedding_engine",
+        "example": 'reload_module("os_tools")'
+    },
+    # === OVERRIDE MODE: Desktop Pilot Tools ===
+    "desktop_click": {
+        "function": desktop_click,
+        "description": "Klik mouse di posisi layar. MEMERLUKAN KONFIRMASI USER sebelum eksekusi.",
+        "param": "x,y[,button][,clicks] — koordinat, tombol (left/right/middle), jumlah klik",
+        "example": 'desktop_click("500,300,left,2")'
+    },
+    "desktop_type": {
+        "function": desktop_type,
+        "description": "Mengetik teks di posisi kursor saat ini. MEMERLUKAN KONFIRMASI USER.",
+        "param": "teks yang ingin diketik (string)",
+        "example": 'desktop_type("Hello World")'
+    },
+    "desktop_press": {
+        "function": desktop_press,
+        "description": "Menekan tombol keyboard (enter, tab, escape, space, backspace, dll). MEMERLUKAN KONFIRMASI USER.",
+        "param": "nama tombol (string)",
+        "example": 'desktop_press("enter")'
+    },
+    "desktop_hotkey": {
+        "function": desktop_hotkey,
+        "description": "Menekan kombinasi tombol keyboard. MEMERLUKAN KONFIRMASI USER.",
+        "param": "tombol dipisah koma. Contoh: ctrl,c atau alt,tab atau ctrl,shift,s",
+        "example": 'desktop_hotkey("ctrl,c")'
+    },
+    "desktop_scroll": {
+        "function": desktop_scroll,
+        "description": "Scroll layar. Positif = atas, negatif = bawah. MEMERLUKAN KONFIRMASI USER.",
+        "param": "jumlah[,x,y] — jumlah scroll dan posisi opsional",
+        "example": 'desktop_scroll("-5")'
+    },
+    "desktop_screenshot": {
+        "function": desktop_screenshot,
+        "description": "Mengambil screenshot layar (penuh atau region tertentu). MEMERLUKAN KONFIRMASI USER.",
+        "param": "kosong untuk full, atau x,y,w,h untuk region",
+        "example": 'desktop_screenshot("") atau desktop_screenshot("100,100,800,600")'
+    },
+    "get_screen_info": {
+        "function": get_screen_info,
+        "description": "Mendapatkan info layar: resolusi dan posisi mouse saat ini. TIDAK memerlukan konfirmasi.",
+        "param": "kosong",
+        "example": 'get_screen_info("")'
+    },
 }
 
 
@@ -176,11 +438,48 @@ def execute_tool(tool_name: str, param: str, agent_id: str = "unknown") -> str:
         return f"[ERROR] Tool '{tool_name}' tidak ditemukan."
     
     # Safety check untuk file operations
-    if tool_name in ("read_file", "write_file", "list_folder", "create_folder"):
+    if tool_name in ("read_file", "write_file", "list_folder", "create_folder", "run_python"):
         check_path = param.split("|||")[0] if "|||" in param else param
-        is_safe, warning = is_safe_path(check_path)
-        if not is_safe:
-            return f"[BLOCKED] Akses ditolak — {warning}"
+        # Hanya cek path jika param terlihat seperti path
+        if "/" in check_path or "\\" in check_path or check_path.endswith(".py"):
+            is_safe, warning = is_safe_path(check_path)
+            if not is_safe:
+                return f"[BLOCKED] Akses ditolak — {warning}"
+    
+    # Tambahan: run_terminal butuh pengawasan ketat
+    elif tool_name == "run_terminal":
+        # Perintah terminal bisa sangat berbahaya
+        print(f"[SECURITY] Agent {agent_id} mencoba menjalankan perintah: {param}")
+    
+    # Special handler: reload_module (Hot-Reload)
+    elif tool_name == "reload_module":
+        allowed_modules = ["os_tools", "agent_tools", "agent_logger", "notes_engine", "embedding_engine"]
+        module_name = param.strip()
+        if module_name not in allowed_modules:
+            return f"[BLOCKED] Modul '{module_name}' tidak diizinkan untuk di-reload. Hanya: {', '.join(allowed_modules)}"
+        try:
+            if module_name in sys.modules:
+                mod = importlib.reload(sys.modules[module_name])
+                # Update referensi di AGENT_TOOLS jika os_tools yang di-reload
+                if module_name == "os_tools":
+                    import os_tools as _fresh_os
+                    AGENT_TOOLS["search_web"]["function"] = _fresh_os.cari_di_internet
+                    AGENT_TOOLS["read_file"]["function"] = _fresh_os.baca_file
+                    AGENT_TOOLS["write_file"]["function"] = _fresh_os.tulis_file
+                    AGENT_TOOLS["list_folder"]["function"] = _fresh_os.lihat_isi_folder
+                    AGENT_TOOLS["create_folder"]["function"] = _fresh_os.buat_folder
+                    AGENT_TOOLS["read_webpage"]["function"] = _fresh_os.baca_halaman_web
+                    AGENT_TOOLS["check_time"]["function"] = _fresh_os.cek_waktu
+                    AGENT_TOOLS["system_info"]["function"] = _fresh_os.baca_sistem_info
+                    AGENT_TOOLS["run_python"]["function"] = _fresh_os.jalankan_python
+                    AGENT_TOOLS["run_terminal"]["function"] = _fresh_os.jalankan_perintah_terminal
+                    AGENT_TOOLS["analyze_stock"]["function"] = _fresh_os.analisa_saham_otomatis
+                print(f"[HOT-RELOAD] Modul '{module_name}' berhasil di-reload oleh agent {agent_id}!")
+                return f"[SUCCESS] Modul '{module_name}' berhasil di-reload! Semua fungsi terbaru sudah aktif."
+            else:
+                return f"[ERROR] Modul '{module_name}' tidak ditemukan di memori. Pastikan modul sudah pernah di-import."
+        except Exception as e:
+            return f"[ERROR] Gagal reload modul '{module_name}': {e}"
     
     # Special handler: analyze_graph_intelligence
     elif tool_name == "analyze_graph_intelligence":
@@ -235,7 +534,11 @@ def execute_tool(tool_name: str, param: str, agent_id: str = "unknown") -> str:
     # Execute normal tool
     tool_func = AGENT_TOOLS[tool_name]["function"]
     try:
-        result = tool_func(param)
+        # Pass agent_id to search_web for focus-mode-aware searching
+        if tool_name == "search_web":
+            result = tool_func(param, agent_id=agent_id)
+        else:
+            result = tool_func(param)
         
         # --- PERPLEXITY FEATURE: SOURCE TRACKING ---
         if tool_name == "search_web":
@@ -269,17 +572,111 @@ def execute_tool(tool_name: str, param: str, agent_id: str = "unknown") -> str:
         return f"[ERROR] Gagal menjalankan tool '{tool_name}': {e}"
 
 
+async def validate_evolve_models(agent_id: str):
+    """Melakukan tes koneksi singkat ke semua model dalam rantai fallback."""
+    if agent_id != "evolve":
+        return
+    
+    # Import genai di sini jika belum ada secara global
+    import google.generativeai as genai
+    
+    agent_logger.info(agent_id, "🔍 Memulai validasi sistem multi-model...")
+    
+    for model_info in EVOLVE_MODEL_CHAIN:
+        provider = model_info["provider"]
+        model_name = model_info["model"]
+        label = model_info["label"]
+        
+        status = "❌"
+        detail = "Unknown error"
+        
+        try:
+            if provider == "openrouter":
+                api_key = os.getenv("OPENROUTER_API_KEY")
+                if not api_key:
+                    detail = "API Key tidak ditemukan"
+                else:
+                    async with httpx.AsyncClient() as client:
+                        resp = await client.get("https://openrouter.ai/api/v1/models", 
+                                              headers={"Authorization": f"Bearer {api_key}"}, 
+                                              timeout=5.0)
+                        if resp.status_code == 200:
+                            status = "✅"
+                            detail = "API Terhubung"
+                        else:
+                            detail = f"HTTP {resp.status_code}"
+            
+            elif provider == "gemini":
+                api_key = os.getenv("GEMINI_API_KEY")
+                if not api_key:
+                    detail = "API Key tidak ditemukan"
+                else:
+                    genai.configure(api_key=api_key)
+                    _ = genai.GenerativeModel(model_name)
+                    status = "✅"
+                    detail = "SDK Terkonfigurasi"
+                    
+            elif provider == "ollama":
+                async with httpx.AsyncClient() as client:
+                    try:
+                        resp = await client.get("http://localhost:11434/api/tags", timeout=2.0)
+                        if resp.status_code == 200:
+                            models_data = resp.json().get("models", [])
+                            found = any(model_name in m["name"] for m in models_data)
+                            if found:
+                                status = "✅"
+                                detail = "Model lokal tersedia"
+                            else:
+                                detail = f"Model '{model_name}' belum di-pull"
+                        else:
+                            detail = f"Ollama HTTP {resp.status_code}"
+                    except Exception:
+                        # Mencoba menyalakan otomatis jika tidak berjalan
+                        agent_logger.info(agent_id, "⚠️ Ollama mati. Mencoba menyalakan otomatis...")
+                        try:
+                            # Gunakan flag CREATE_NEW_CONSOLE agar tidak memblokir process utama di Windows
+                            subprocess.Popen(["ollama", "serve"], 
+                                           creationflags=subprocess.CREATE_NEW_CONSOLE if os.name == 'nt' else 0,
+                                           stdout=subprocess.DEVNULL, 
+                                           stderr=subprocess.DEVNULL)
+                            
+                            # Tunggu sebentar dan cek lagi
+                            await asyncio.sleep(5)
+                            try:
+                                resp = await client.get("http://localhost:11434/api/tags", timeout=3.0)
+                                if resp.status_code == 200:
+                                    status = "✅"
+                                    detail = "Model lokal (Auto-Started)"
+                                else:
+                                    detail = "Ollama berhasil dinyalakan tapi model belum siap"
+                            except:
+                                detail = "Ollama sedang booting (Silakan coba lagi sebentar lagi)"
+                        except Exception as e:
+                            detail = f"Ollama mati & gagal dinyalakan: {str(e)[:40]}"
+                        
+        except Exception as e:
+            detail = f"Error: {str(e)[:50]}"
+            
+        agent_logger.info(agent_id, f"{status} {label}: {detail}")
+
+    agent_logger.info(agent_id, "🚀 Validasi selesai. Memulai eksekusi...")
+
+
 async def process_agent_command_with_tools(
     persona_content: str,
     messages: list,
     headers: dict,
     model: str,
     max_tool_rounds: int = 3,
-    agent_id: str = "unknown"
+    agent_id: str = "unknown",
+    model_chain: list = None
 ) -> str:
     """
     Main loop: kirim pesan ke AI → cek tool call → execute → kirim balik.
     Maks 3 putaran tool call untuk mencegah infinite loop.
+    
+    Jika model_chain diberikan (khusus agen Evolve), gunakan sistem fallback
+    multi-model. Jika tidak, pakai OpenRouter standar.
     """
     tools_desc = get_tools_description()
     
@@ -298,37 +695,53 @@ async def process_agent_command_with_tools(
     else:
         working_messages.insert(0, {"role": "system", "content": enhanced_system})
     
+    use_fallback = model_chain is not None and len(model_chain) > 0
+    
+    # Jalankan validasi jika ini adalah perintah awal untuk AlphaEvolve
+    if agent_id == "evolve" and len(messages) <= 2:
+        await validate_evolve_models(agent_id)
+    
     for round_num in range(max_tool_rounds + 1):
-        payload = {
-            "model": model,
-            "messages": working_messages
-        }
         
-        def _do_request():
-            max_retries = 3
-            last_err = None
-            for i in range(max_retries):
-                try:
-                    return requests.post(
-                        "https://openrouter.ai/api/v1/chat/completions",
-                        headers=headers,
-                        json=payload,
-                        timeout=90
-                    )
-                except (requests.exceptions.RequestException, Exception) as e:
-                    last_err = e
-                    print(f"[AGENT TOOLS] API Timeout/Error (Attempt {i+1}/{max_retries}): {e}")
-                    if i < max_retries - 1:
-                        import time
-                        time.sleep(2) # Wait 2 seconds before retry
-            # If all retries fail
-            raise last_err
-        
-        resp = await asyncio.to_thread(_do_request)
-        resp.raise_for_status()
-        result = resp.json()
-        
-        ai_response = result['choices'][0]['message']['content']
+        if use_fallback:
+            # ─── EVOLVE MODE: Multi-Model Fallback ───
+            ai_response = await asyncio.to_thread(
+                _call_llm_with_fallback,
+                working_messages,
+                model_chain,
+                headers,
+                agent_id
+            )
+        else:
+            # ─── STANDARD MODE: Single OpenRouter Model ───
+            payload = {
+                "model": model,
+                "messages": working_messages
+            }
+            
+            def _do_request():
+                max_retries = 3
+                last_err = None
+                for i in range(max_retries):
+                    try:
+                        return requests.post(
+                            "https://openrouter.ai/api/v1/chat/completions",
+                            headers=headers,
+                            json=payload,
+                            timeout=90
+                        )
+                    except (requests.exceptions.RequestException, Exception) as e:
+                        last_err = e
+                        print(f"[AGENT TOOLS] API Timeout/Error (Attempt {i+1}/{max_retries}): {e}")
+                        if i < max_retries - 1:
+                            _time.sleep(2)  # Wait 2 seconds before retry
+                # If all retries fail
+                raise last_err
+            
+            resp = await asyncio.to_thread(_do_request)
+            resp.raise_for_status()
+            result = resp.json()
+            ai_response = result['choices'][0]['message']['content']
         
         # Cek apakah AI ingin pakai tool
         tool_call = parse_tool_call(ai_response)
@@ -341,6 +754,31 @@ async def process_agent_command_with_tools(
             # Sudah melebihi batas tool rounds
             return ai_response.replace(tool_call["raw_match"], "") + "\n\n*[Batas tool call tercapai]*"
         
+        # Tentukan status yang ramah pengguna
+        tool_status_map = {
+            "search_web": "Sedang melakukan research web...",
+            "read_file": "Sedang membaca dokumen...",
+            "write_file": "Sedang menulis file...",
+            "list_folder": "Sedang mengecek isi folder...",
+            "create_folder": "Sedang membuat folder...",
+            "read_webpage": "Sedang membaca halaman web...",
+            "check_time": "Sedang mengecek waktu...",
+            "system_info": "Sedang mengecek info sistem...",
+            "analyze_stock": "Sedang menganalisa saham...",
+            "screenshot": "Sedang mengambil tangkapan layar...",
+            "create_docx": "Sedang membuat dokumen...",
+            "list_docx_presets": "Sedang mengecek preset dokumen...",
+            "request_graph_capture": "Sedang mengambil gambar graph...",
+            "analyze_graph_intelligence": "Sedang menganalisa intelijen graph...",
+            "export_pdf": "Sedang mengekspor ke PDF...",
+            "delegate_to_agent": "Sedang mendelegasikan tugas ke agent lain...",
+            "run_python": "Sedang menjalankan kode Python...",
+            "run_terminal": "Sedang menjalankan perintah terminal...",
+            "reload_module": "Sedang me-reload modul..."
+        }
+        status_msg = tool_status_map.get(tool_call['tool'], f"Sedang mengeksekusi {tool_call['tool']}...")
+        agent_logger.set_agent_status(agent_id, status_msg)
+        
         # Execute tool
         print(f"[AGENT TOOLS] Round {round_num+1}: Executing {tool_call['tool']}({tool_call['param'][:80]}...)")
         agent_logger.log_activity(agent_id, f"Using tool: {tool_call['tool']}", "tool")
@@ -351,6 +789,8 @@ async def process_agent_command_with_tools(
             agent_logger.log_activity(agent_id, f"Tool failed: {tool_result[:60]}", "error")
         else:
             agent_logger.log_activity(agent_id, f"Tool OK: {tool_call['tool']} completed", "success")
+        
+        agent_logger.set_agent_status(agent_id, "Sedang memproses hasil...")
         
         # Tambahkan AI response + tool result ke conversation
         # Hapus TOOL_CALL block dari response yang ditampilkan

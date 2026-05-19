@@ -1,0 +1,299 @@
+/* ═══════════════════════════════════════════════════════
+   GATHER ENGINE — Canvas-Based Virtual Office
+   ═══════════════════════════════════════════════════════ */
+
+.gather-engine {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #0a0a0f;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ─── Floor Controls ────────────────────────────── */
+.ge-floor-controls {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 20;
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  background: rgba(0, 0, 0, 0.85);
+  border-radius: 8px;
+  border: 1px solid rgba(0, 255, 255, 0.15);
+  backdrop-filter: blur(12px);
+}
+
+.ge-floor-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.5);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.ge-floor-btn:hover {
+  background: rgba(0, 255, 255, 0.05);
+  color: #fff;
+  border-color: rgba(0, 255, 255, 0.3);
+}
+
+.ge-floor-btn.active {
+  background: rgba(0, 255, 255, 0.12);
+  color: #00ffff;
+  border-color: #00ffff;
+  box-shadow: 0 0 15px rgba(0, 255, 255, 0.15),
+              inset 0 0 10px rgba(0, 255, 255, 0.05);
+}
+
+.floor-icon {
+  font-size: 0.85rem;
+}
+
+.floor-label {
+  font-weight: 600;
+}
+
+/* ─── Canvas Wrapper ─────────────────────────────── */
+.ge-canvas-wrapper {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  min-height: 360px;
+}
+
+.ge-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+  cursor: default;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* ─── Loading State ──────────────────────────────── */
+.ge-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 16px;
+  color: rgba(0, 255, 255, 0.6);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.85rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.ge-loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 2px solid rgba(0, 255, 255, 0.1);
+  border-top: 2px solid #00ffff;
+  border-radius: 50%;
+  animation: ge-spin 0.8s linear infinite;
+}
+
+@keyframes ge-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ─── Controls Legend ────────────────────────────── */
+.ge-legend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: rgba(0, 0, 0, 0.7);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.35);
+  font-family: 'Inter', monospace;
+  font-size: 0.7rem;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+/* ═══════════════════════════════════════════════════════
+   VISUAL NOVEL DIALOG SYSTEM
+   ═══════════════════════════════════════════════════════ */
+
+.vn-dialog-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+  animation: vn-fade-in 0.2s ease;
+}
+
+@keyframes vn-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.vn-dialog-box {
+  width: 100%;
+  max-width: 680px;
+  background: linear-gradient(
+    135deg,
+    rgba(15, 15, 25, 0.97) 0%,
+    rgba(20, 20, 35, 0.97) 100%
+  );
+  border: 1px solid rgba(0, 255, 255, 0.2);
+  border-radius: 12px;
+  padding: 0;
+  overflow: hidden;
+  box-shadow:
+    0 0 30px rgba(0, 255, 255, 0.08),
+    0 20px 60px rgba(0, 0, 0, 0.6);
+  animation: vn-slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes vn-slide-up {
+  from {
+    transform: translateY(30px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* ─── Portrait Area ──────────────────────────────── */
+.vn-portrait-area {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  background: rgba(0, 0, 0, 0.4);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.vn-portrait {
+  width: 60px;
+  height: 60px;
+  border-radius: 10px;
+  border: 2px solid #00ffff;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.5);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vn-portrait-canvas {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.vn-agent-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.vn-agent-name {
+  font-family: 'Inter', sans-serif;
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.5px;
+}
+
+.vn-agent-role {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+/* ─── Text Area ──────────────────────────────────── */
+.vn-text-area {
+  padding: 18px 20px;
+  min-height: 60px;
+}
+
+.vn-text {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.88rem;
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.88);
+  margin: 0;
+  letter-spacing: 0.2px;
+}
+
+/* ─── Action Buttons ─────────────────────────────── */
+.vn-actions {
+  display: flex;
+  gap: 8px;
+  padding: 0 18px 14px;
+}
+
+.vn-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  letter-spacing: 0.5px;
+}
+
+.vn-btn-console {
+  background: rgba(0, 255, 255, 0.1);
+  color: #00ffff;
+  border-color: rgba(0, 255, 255, 0.3);
+  flex: 1;
+}
+
+.vn-btn-console:hover {
+  background: rgba(0, 255, 255, 0.2);
+  box-shadow: 0 0 15px rgba(0, 255, 255, 0.15);
+}
+
+.vn-btn-close {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.5);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.vn-btn-close:hover {
+  background: rgba(255, 50, 50, 0.1);
+  color: #ff4444;
+  border-color: rgba(255, 50, 50, 0.3);
+}
+
+/* ─── Hint ───────────────────────────────────────── */
+.vn-hint {
+  padding: 6px 18px 10px;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.62rem;
+  color: rgba(255, 255, 255, 0.2);
+  text-align: right;
+  letter-spacing: 0.5px;
+}

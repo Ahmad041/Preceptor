@@ -1,13 +1,23 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import axios from 'axios';
 import './AgentOffice.css';
 
-const CommandConsole = ({ agent, onClose, sources = [], logs = [] }) => {
+// Focus mode definitions with cyberpunk color themes
+const FOCUS_MODES = [
+    { id: 'all',      label: '🌐 Web',      color: '#a78bfa', desc: 'General search' },
+    { id: 'academic', label: '🎓 Academic',  color: '#60a5fa', desc: 'Scholar, arXiv, Nature' },
+    { id: 'code',     label: '💻 Code',      color: '#34d399', desc: 'GitHub, StackOverflow' },
+    { id: 'youtube',  label: '📺 YouTube',   color: '#f87171', desc: 'YouTube videos' },
+    { id: 'reddit',   label: '💬 Reddit',    color: '#fb923c', desc: 'Reddit threads' },
+    { id: 'writing',  label: '✍️ Writing',   color: '#e879f9', desc: 'Offline composition' },
+];
+
+const CommandConsole = ({ agent, onClose, sources = [], logs = [], history = [], setHistory }) => {
     const [command, setCommand] = useState('');
-    const [history, setHistory] = useState([]);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [activeModes, setActiveModes] = useState([]);
     
     // Sync logs into history if history is empty (prevents "empty" look when agent is busy)
     useEffect(() => {
@@ -15,7 +25,7 @@ const CommandConsole = ({ agent, onClose, sources = [], logs = [] }) => {
             const initialLogs = logs.map(l => ({ role: 'system', content: l }));
             setHistory(initialLogs);
         }
-    }, [logs]);
+    }, [logs, history.length, setHistory]);
     const scrollRef = useRef(null);
     const inputRef = useRef(null);
 
@@ -42,9 +52,27 @@ const CommandConsole = ({ agent, onClose, sources = [], logs = [] }) => {
     }, [isProcessing]);
 
     const handleOverlayClick = (e) => {
-        if (e.target.className === 'command-console-overlay') {
+        if (e.target === e.currentTarget) {
             onClose();
         }
+    };
+
+    // Toggle a focus mode on/off
+    const toggleMode = (modeId) => {
+        setActiveModes(prev => {
+            if (modeId === 'writing') {
+                // Writing mode is exclusive — toggles off everything else
+                return prev.includes('writing') ? [] : ['writing'];
+            }
+            if (prev.includes('writing')) {
+                // Switching away from writing
+                return [modeId];
+            }
+            if (prev.includes(modeId)) {
+                return prev.filter(m => m !== modeId);
+            }
+            return [...prev, modeId];
+        });
     };
 
     // Build conversation messages for context
@@ -75,7 +103,8 @@ const CommandConsole = ({ agent, onClose, sources = [], logs = [] }) => {
             const response = await axios.post('http://localhost:8000/api/agent/command', {
                 agent_id: agent.id,
                 command: currentCommand,
-                conversation: buildMessages(currentCommand)
+                conversation: buildMessages(currentCommand),
+                focus_modes: activeModes.length > 0 ? activeModes : null
             });
 
             if (response.data.status === 'berhasil') {
@@ -105,15 +134,91 @@ const CommandConsole = ({ agent, onClose, sources = [], logs = [] }) => {
         }
     };
 
+    // Citation renderer: transforms [1], [2] etc. in agent messages into clickable source links
+    const renderCitationContent = useCallback((text) => {
+        if (!sources || sources.length === 0) return text;
+        
+        // Replace [N] patterns with clickable citation links
+        return text.replace(/\[(\d+)\]/g, (match, numStr) => {
+            const idx = parseInt(numStr, 10) - 1;
+            if (idx >= 0 && idx < sources.length) {
+                return `[${numStr}](${sources[idx].url} "${sources[idx].title}")`;
+            }
+            return match;
+        });
+    }, [sources]);
+
+    // Custom markdown components with citation support
+    const markdownComponents = useMemo(() => ({
+        a: ({ href, title, children }) => {
+            // Check if it's a citation link (from our renderCitationContent)
+            const isCitation = /^\d+$/.test(String(children));
+            if (isCitation) {
+                return (
+                    <a
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="citation-pill"
+                        title={title || href}
+                        style={{ '--citation-color': agent.color || '#a78bfa' }}
+                    >
+                        {children}
+                    </a>
+                );
+            }
+            return (
+                <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: agent.color || '#a78bfa' }}>
+                    {children}
+                </a>
+            );
+        }
+    }), [agent.color, sources]);
+
     return (
-        <div className="command-console-overlay" onClick={handleOverlayClick}>
-            <div className={`command-console-modal ${agent.color} ${sources.length > 0 ? 'has-sources' : ''}`}>
+        <div 
+            style={{
+                position: 'fixed',
+                top: 0, left: 0, right: 0, bottom: 0,
+                background: 'rgba(0,0,0,0.85)',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                zIndex: 1000,
+            }}
+            onClick={handleOverlayClick}
+        >
+            <div className={`command-console-modal ${sources.length > 0 ? 'has-sources' : ''}`} style={{ borderTop: `3px solid ${agent.color || '#888'}` }}>
                 <div className="console-main-area">
                     <div className="console-header">
                         <div className="title">
                             <span className="blink">●</span> COMMAND CENTER: {agent.name.toUpperCase()}
                         </div>
                         <button className="close-btn" onClick={onClose} title="Close (Esc)">×</button>
+                    </div>
+
+                    {/* FOCUS MODE MULTI-TOGGLE BAR */}
+                    <div className="focus-mode-bar">
+                        {FOCUS_MODES.map(mode => {
+                            const isActive = activeModes.includes(mode.id);
+                            return (
+                                <button
+                                    key={mode.id}
+                                    className={`focus-mode-toggle ${isActive ? 'active' : ''}`}
+                                    onClick={() => toggleMode(mode.id)}
+                                    title={mode.desc}
+                                    style={{
+                                        '--fm-color': mode.color,
+                                        '--fm-bg': isActive ? `${mode.color}20` : 'transparent',
+                                        '--fm-border': isActive ? `${mode.color}60` : 'rgba(255,255,255,0.08)',
+                                        '--fm-shadow': isActive ? `0 0 12px ${mode.color}30` : 'none',
+                                    }}
+                                >
+                                    <span className="focus-mode-icon">{mode.label.split(' ')[0]}</span>
+                                    <span className="focus-mode-label">{mode.label.split(' ').slice(1).join(' ')}</span>
+                                </button>
+                            );
+                        })}
                     </div>
 
                     <div className="console-history" ref={scrollRef}>
@@ -129,7 +234,12 @@ const CommandConsole = ({ agent, onClose, sources = [], logs = [] }) => {
                                 </span>
                                 <div className="content">
                                     {msg.role === 'agent' ? (
-                                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                                        <ReactMarkdown 
+                                            remarkPlugins={[remarkGfm]}
+                                            components={markdownComponents}
+                                        >
+                                            {renderCitationContent(msg.content)}
+                                        </ReactMarkdown>
                                     ) : (
                                         msg.content
                                     )}
@@ -159,7 +269,12 @@ const CommandConsole = ({ agent, onClose, sources = [], logs = [] }) => {
 
                     <div className="console-footer">
                         <span>STATUS: {isProcessing ? 'BUSY' : 'READY'}</span>
-                        <span>AGENT: {agent.id.toUpperCase()}</span>
+                        <span>
+                            {activeModes.length > 0 
+                                ? `FOCUS: ${activeModes.map(m => m.toUpperCase()).join(' + ')}` 
+                                : 'FOCUS: DEFAULT'
+                            }
+                        </span>
                         <span>ESC TO CLOSE</span>
                     </div>
                 </div>
@@ -180,7 +295,7 @@ const CommandConsole = ({ agent, onClose, sources = [], logs = [] }) => {
                                         className="source-item"
                                         title={source.url}
                                     >
-                                        <div className="source-index">{idx + 1}</div>
+                                        <div className="source-index" style={{ background: `${agent.color || '#a78bfa'}25`, color: agent.color || '#a78bfa' }}>{idx + 1}</div>
                                         <div className="source-info">
                                             <div className="source-title">{source.title}</div>
                                             <div className="source-url">{new URL(source.url).hostname}</div>

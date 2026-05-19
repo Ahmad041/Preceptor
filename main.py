@@ -23,8 +23,11 @@ import psutil
 import os_tools
 from agent_tools import process_agent_command_with_tools
 import agent_logger
+from memory_system import memory
 from notes_engine import notes_index, build_note_metadata, get_watched_folders, add_watched_folder, remove_watched_folder
 from embedding_engine import embedding_engine
+import desktop_pilot
+from vision_loop import vision_engine
 
 load_dotenv()
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
@@ -162,10 +165,6 @@ EMOSI_INSTRUKSI = {
 # ============================================================
 # 2. LOCALDOCS + RAG — Semantic Search dengan Nomic Embed
 # ============================================================
-# Penyimpanan: setiap chunk punya teks + embedding vector
-# Format: [{"nama": "file.pdf", "chunk": "teks...", "embedding": [0.1, 0.2, ...]}]
-rag_store: List[dict] = []
-
 # Daftar file yang sudah di-upload (untuk UI)
 file_registry: List[dict] = []
 
@@ -206,133 +205,6 @@ def potong_teks_jadi_chunk(teks: str, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERL
         start = end - overlap  # Mundur sedikit untuk overlap
     return chunks
 
-# ============================================================
-# KONFIGURASI OLLAMA EMBEDDING (Lokal, tanpa API key)
-# ============================================================
-OLLAMA_BASE_URL = "http://localhost:11434"
-OLLAMA_EMBED_MODEL = "nomic-embed-text:latest"
-
-def buat_embedding(teks_list: List[str]) -> List[List[float]]:
-    """Membuat embedding vector menggunakan Ollama lokal (nomic-embed-text) dengan batch /api/embed"""
-    if not teks_list:
-        return []
-
-    print(f"[EMBED] Memproses {len(teks_list)} chunks via Ollama (/api/embed)...")
-    try:
-        resp = requests.post(
-            f"{OLLAMA_BASE_URL}/api/embed",
-            json={"model": OLLAMA_EMBED_MODEL, "input": teks_list},
-            timeout=120
-        )
-        if resp.status_code == 500:
-            print("[EMBED ERROR] Ollama Internal Server Error (500). Kemungkinan VRAM/RAM habis.")
-            return []
-            
-        resp.raise_for_status()
-        embeddings = resp.json().get("embeddings", [])
-        
-        if embeddings and len(embeddings) == len(teks_list):
-            print(f"[EMBED] ✅ Selesai: {len(embeddings)} chunk berhasil di-embed.")
-            return embeddings
-        else:
-            print(f"[EMBED WARNING] Jumlah embedding yang dikembalikan ({len(embeddings)}) berbeda dengan input ({len(teks_list)})")
-            return embeddings
-    except Exception as e:
-        print(f"[EMBED ERROR] Gagal embed via Ollama: {e}")
-        print(f"[EMBED] Pastikan Ollama berjalan dan model '{OLLAMA_EMBED_MODEL}' sudah di-pull!")
-        return []
-
-MEMORY_FILE = "memori_bocchi.json"
-
-def muat_memori_jangka_panjang():
-    global rag_store
-    if os.path.exists(MEMORY_FILE):
-        try:
-            with open(MEMORY_FILE, "r", encoding="utf-8") as f:
-                data_memori = json.load(f)
-            rag_store = [item for item in rag_store if item["nama"] != "Memori Obrolan"]
-            rag_store.extend(data_memori)
-            print(f"[MEMORI] Berhasil memuat {len(data_memori)} ingatan masa lalu dari {MEMORY_FILE}")
-        except Exception as e:
-            print(f"[MEMORI ERROR] Gagal memuat file memori: {str(e)}")
-
-# Panggil fungsi ini saat server baru menyala!
-muat_memori_jangka_panjang()
-
-def simpan_ingatan_baru(teks_user: str, teks_bocchi: str):
-    global rag_store
-    teks_memori = f"Pernah terjadi percakapan ini:\nUser: {teks_user}\nBocchi: {teks_bocchi}"
-    print(f"[MEMORI] Merajut ingatan ke dalam otak Bocchi...")
-    emb = buat_embedding([teks_memori])
-    if emb:
-        item_memori = {
-            "nama": "Memori Obrolan",
-            "chunk": teks_memori,
-            "embedding": emb[0]
-        }
-        rag_store.append(item_memori)
-        data_permanen = [item for item in rag_store if item["nama"] == "Memori Obrolan"]
-        try:
-            with open(MEMORY_FILE, "w", encoding="utf-8") as f:
-                json.dump(data_permanen, f, indent=4)
-        except Exception as e:
-            print(f"[MEMORI ERROR] Gagal menyimpan memori: {e}")
-
-def cosine_similarity(a, b):
-    """Menghitung kemiripan kosinus antara dua vektor"""
-    a = np.array(a)
-    b = np.array(b)
-    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-8)
-
-def buat_query_embedding(teks: str) -> List[float]:
-    """Membuat embedding untuk query pencarian via Ollama lokal"""
-    try:
-        resp = requests.post(
-            f"{OLLAMA_BASE_URL}/api/embed",
-            json={"model": OLLAMA_EMBED_MODEL, "input": [teks]},
-            timeout=30
-        )
-        if resp.status_code == 500:
-            print("[EMBED ERROR] Ollama Internal Server Error (500) saat mencari dokumen.")
-            return []
-            
-        resp.raise_for_status()
-        emb = resp.json().get("embeddings", [])
-        return emb[0] if emb else []
-    except Exception as e:
-        print(f"[EMBED ERROR] Gagal embed query via Ollama: {e}")
-        print(f"[EMBED] Pastikan Ollama berjalan: 'ollama serve' dan 'ollama pull {OLLAMA_EMBED_MODEL}'")
-        return []
-
-def cari_chunk_relevan(pertanyaan: str, top_k=TOP_K) -> List[str]:
-    """Mencari chunk dokumen paling relevan dengan pertanyaan user"""
-    if not rag_store:
-        return []
-    
-    # Embed pertanyaan user (task_type: retrieval_query)
-    query_vec = buat_query_embedding(pertanyaan)
-    if not query_vec:
-        return []
-    
-    # Hitung similarity untuk setiap chunk
-    scored = []
-    for item in rag_store:
-        if item.get("embedding"):
-            sim = cosine_similarity(query_vec, item["embedding"])
-            scored.append((sim, item))
-    
-    # Urutkan dari yang paling mirip
-    scored.sort(key=lambda x: x[0], reverse=True)
-    
-    # Ambil top_k chunk
-    hasil = []
-    for sim, item in scored[:top_k]:
-        if sim > 0.3:  # Threshold minimum relevansi
-            hasil.append(f"[📄 {item['nama']}] (relevansi: {sim:.2f})\n{item['chunk']}")
-            print(f"  ↳ Chunk dari '{item['nama']}' (skor: {sim:.3f})")
-    
-    return hasil
-
 
 # ============================================================
 # ENDPOINTS
@@ -349,16 +221,15 @@ async def upload_dokumen(file: UploadFile = File(...)):
             return {"status": "gagal", "error": "Dokumen kosong atau tidak bisa dibaca"}
         
         # Hapus chunks lama dari file yang sama (jika re-upload)
-        global rag_store
-        rag_store = [c for c in rag_store if c["nama"] != file.filename]
+        memory.long_term_memory = [c for c in memory.long_term_memory if c.get("nama") != file.filename]
         
         # Potong teks jadi chunks
         chunks = potong_teks_jadi_chunk(teks)
         print(f"\n[DOKUMEN] '{file.filename}' → {len(chunks)} chunks")
         
         # Buat embedding untuk semua chunks sekaligus (batch)
-        print(f"[EMBED] Membuat embedding untuk {len(chunks)} chunks dengan Gemini API...")
-        embeddings = buat_embedding(chunks)
+        print(f"[EMBED] Membuat embedding untuk {len(chunks)} chunks dengan Nomic API...")
+        embeddings = memory.create_embedding(chunks)
         
         if len(embeddings) != len(chunks):
             print(f"[WARNING] Jumlah embedding ({len(embeddings)}) != chunks ({len(chunks)})")
@@ -367,11 +238,7 @@ async def upload_dokumen(file: UploadFile = File(...)):
         
         # Simpan ke RAG store
         for i, (chunk, emb) in enumerate(zip(chunks, embeddings)):
-            rag_store.append({
-                "nama": file.filename,
-                "chunk": chunk,
-                "embedding": emb
-            })
+            memory.add_to_long_term_memory(file.filename, chunk, emb)
         
         # Update file registry
         global file_registry
@@ -400,19 +267,19 @@ async def daftar_dokumen():
     """Melihat daftar dokumen yang sudah di-upload"""
     return {
         "total": len(file_registry),
-        "total_chunks": len(rag_store),
+        "total_chunks": len(memory.long_term_memory),
         "dokumen": file_registry
     }
 
 @app.delete("/api/dokumen/{nama_file}")
 async def hapus_dokumen(nama_file: str):
     """Menghapus dokumen dari RAG store"""
-    global rag_store, file_registry
-    sebelum = len(rag_store)
-    rag_store = [c for c in rag_store if c["nama"] != nama_file]
+    global file_registry
+    sebelum = len(memory.long_term_memory)
+    memory.long_term_memory = [c for c in memory.long_term_memory if c.get("nama") != nama_file]
     file_registry = [f for f in file_registry if f["nama"] != nama_file]
     
-    dihapus = sebelum - len(rag_store)
+    dihapus = sebelum - len(memory.long_term_memory)
     if dihapus > 0:
         print(f"[DOKUMEN] Dihapus: {nama_file} ({dihapus} chunks)")
         return {"status": "dihapus", "chunks_dihapus": dihapus, "total_dokumen": len(file_registry)}
@@ -533,11 +400,92 @@ class AgentCommand(BaseModel):
     agent_id: str
     command: str
     conversation: Optional[List[dict]] = None
+    focus_modes: Optional[List[str]] = None
 
 @app.post("/api/agent/command")
 async def agent_command_api(data: AgentCommand):
     """Memproses perintah untuk agent tertentu berdasarkan persona — dengan Tool Calling"""
+    # Simpan focus modes yang aktif
+    agent_logger.set_agent_focus_modes(data.agent_id, data.focus_modes)
     try:
+        # === INTERCEPT ORCHESTRATOR ===
+        if data.agent_id == "orchestrator":
+            from orchestrator import orchestrator
+            agent_logger.set_agent_status("orchestrator", "processing")
+            agent_logger.record_command("orchestrator")
+            agent_logger.log_activity("orchestrator", f"Planning flow: {data.command}", "info")
+            
+            flow = orchestrator.start_flow(data.command)
+            tasks = orchestrator.plan_tasks(data.command)
+            
+            headers = {
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "HTTP-Referer": "http://localhost:3000",
+                "X-Title": "Agent Office Mission Control",
+                "Content-Type": "application/json"
+            }
+            
+            overall_response = f"**PentAGI Flow Started**\nObjective: {data.command}\nPlanned Tasks: {len(tasks)}\n\n"
+            
+            for idx, task in enumerate(tasks, 1):
+                target_agent = orchestrator.assign_agent(task.assignee_role)
+                agent_logger.log_activity("orchestrator", f"Task {idx}: {task.description} -> {target_agent}", "info")
+                
+                # Fetch target persona
+                target_persona_path = os.path.join("personas", f"{target_agent}.md")
+                if os.path.exists(target_persona_path):
+                    with open(target_persona_path, "r", encoding="utf-8") as f:
+                        target_persona = f.read()
+                else:
+                    target_persona = "You are a helpful AI."
+                
+                # Context
+                agent_context = orchestrator.get_agent_context(target_agent)
+                target_persona += f"\n\n[ORCHESTRATOR INSTRUCTIONS]\nYou have been assigned the following task:\nTask: {task.description}\n{agent_context}"
+                
+                target_messages = [{"role": "system", "content": ""}, {"role": "user", "content": f"Please execute this task: {task.description}"}]
+                
+                agent_logger.set_agent_status(target_agent, "processing")
+                
+                evolve_chain = None
+                if target_agent == "evolve":
+                    from agent_tools import EVOLVE_MODEL_CHAIN
+                    evolve_chain = EVOLVE_MODEL_CHAIN
+                
+                try:
+                    task_response = await process_agent_command_with_tools(
+                        persona_content=target_persona,
+                        messages=target_messages,
+                        headers=headers,
+                        model=OPENROUTER_MODEL,
+                        max_tool_rounds=7 if target_agent == "evolve" else 3,
+                        agent_id=target_agent,
+                        model_chain=evolve_chain
+                    )
+                    task.status = "completed"
+                    task.result = task_response
+                    overall_response += f"### Task {idx}: {task.description}\n**Agent**: {target_agent}\n**Result**:\n{task_response}\n\n"
+                    
+                    # Store memory
+                    memory.record_episode(target_agent, task.description, "execute_task", task_response, True)
+                    agent_logger.set_agent_status(target_agent, "done")
+                except Exception as e:
+                    task.status = "failed"
+                    task.result = str(e)
+                    overall_response += f"### Task {idx}: {task.description}\n**Agent**: {target_agent}\n**Result**: FAILED ({str(e)})\n\n"
+                    memory.record_episode(target_agent, task.description, "execute_task", str(e), False)
+                    agent_logger.set_agent_status(target_agent, "error")
+                    
+            flow.status = "completed"
+            agent_logger.set_agent_status("orchestrator", "done")
+            
+            return {
+                "status": "berhasil",
+                "agent_id": "orchestrator",
+                "response": overall_response
+            }
+
+        # === NORMAL AGENT EXECUTION ===
         persona_path = os.path.join("personas", f"{data.agent_id}.md")
         if not os.path.exists(persona_path):
             return {"status": "gagal", "error": f"Persona for {data.agent_id} not found"}
@@ -567,14 +515,29 @@ async def agent_command_api(data: AgentCommand):
         
         agent_logger.log_activity(data.agent_id, "Connecting to AI model...", "system")
         
+        # Evolve agent butuh lebih banyak putaran untuk siklus evolusi penuh
+        evolve_rounds = 7 if data.agent_id == "evolve" else 3
+        
+        # Import model chain untuk agen Evolve (multi-model fallback)
+        evolve_chain = None
+        if data.agent_id == "evolve":
+            from agent_tools import EVOLVE_MODEL_CHAIN
+            evolve_chain = EVOLVE_MODEL_CHAIN
+            agent_logger.log_activity(
+                data.agent_id,
+                f"AlphaEvolve mode: {len(evolve_chain)} model candidates loaded",
+                "system"
+            )
+        
         # Gunakan tool-calling loop dari agent_tools
         ai_response = await process_agent_command_with_tools(
             persona_content=persona_content,
             messages=messages,
             headers=headers,
             model=OPENROUTER_MODEL,
-            max_tool_rounds=3,
-            agent_id=data.agent_id
+            max_tool_rounds=evolve_rounds,
+            agent_id=data.agent_id,
+            model_chain=evolve_chain
         )
         
         agent_logger.log_activity(data.agent_id, "Response generated OK", "success")
@@ -619,7 +582,7 @@ async def get_system_stats():
 @app.get("/api/agent/activity")
 async def get_all_agent_activity():
     """Get logs, status, activity level, dan sources semua agent sekaligus."""
-    agent_ids = ["soft", "docs", "mon", "scout", "analyst", "content", "lead"]
+    agent_ids = ["soft", "docs", "mon", "scout", "analyst", "content", "lead", "evolve"]
     result = {}
     for aid in agent_ids:
         result[aid] = {
@@ -2100,3 +2063,80 @@ async def get_calendar_events():
         print(f"[CALENDAR ERROR] {e}")
         return {"status": "error", "message": str(e)}
 
+# ============================================================
+# OVERRIDE MODE — Desktop Pilot + Vision APIs
+# ============================================================
+
+class DesktopActionRequest(BaseModel):
+    action_type: str
+    params: dict
+    agent_id: Optional[str] = "user"
+
+class ActionDecision(BaseModel):
+    action_id: str
+
+@app.post("/api/desktop/request")
+async def request_desktop_action_api(data: DesktopActionRequest):
+    """Mengajukan aksi desktop ke antrian konfirmasi."""
+    result = desktop_pilot.request_desktop_action(
+        data.action_type, data.params, data.agent_id
+    )
+    return result
+
+@app.post("/api/desktop/approve")
+async def approve_desktop_action_api(data: ActionDecision):
+    """User menyetujui aksi desktop."""
+    result = desktop_pilot.approve_action(data.action_id)
+    return result
+
+@app.post("/api/desktop/reject")
+async def reject_desktop_action_api(data: ActionDecision):
+    """User menolak aksi desktop."""
+    result = desktop_pilot.reject_action(data.action_id)
+    return result
+
+@app.get("/api/desktop/pending")
+async def get_pending_actions_api():
+    """Ambil semua aksi desktop yang menunggu konfirmasi."""
+    return {"pending": desktop_pilot.get_pending_actions()}
+
+@app.get("/api/desktop/history")
+async def get_action_history_api():
+    """Ambil riwayat aksi desktop."""
+    return {"history": desktop_pilot.get_action_history()}
+
+@app.post("/api/vision/start")
+async def start_vision_api(interval: Optional[int] = 10):
+    """Mulai vision loop (periodic screenshot analysis)."""
+    result = vision_engine.start(interval)
+    return result
+
+@app.post("/api/vision/stop")
+async def stop_vision_api():
+    """Hentikan vision loop."""
+    result = vision_engine.stop()
+    return result
+
+@app.get("/api/vision/current")
+async def get_vision_current_api():
+    """Ambil analisis layar terbaru."""
+    return vision_engine.get_current_analysis()
+
+@app.get("/api/vision/history")
+async def get_vision_history_api():
+    """Ambil riwayat analisis layar."""
+    return {"history": vision_engine.get_history()}
+
+@app.post("/api/vision/capture")
+async def force_vision_capture_api():
+    """Force capture sekarang juga."""
+    result = vision_engine.capture_now()
+    return result
+
+@app.get("/api/vision/status")
+async def get_vision_status_api():
+    """Cek apakah vision loop sedang berjalan."""
+    return {
+        "running": vision_engine.is_running(),
+        "current": vision_engine.get_current_analysis()
+    }

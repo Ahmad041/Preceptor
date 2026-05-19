@@ -3,8 +3,11 @@ import axios from 'axios';
 import NotesSidebar from './NotesSidebar';
 import NoteEditor from './NoteEditor';
 import KnowledgeGraph from './KnowledgeGraph';
+import Cortex3DGraph from './Cortex3DGraph';
+import PulseLiveFeed from './PulseLiveFeed';
 import AgentOffice from './AgentOffice';
 import TeamStats from './TeamStats';
+import OverrideMode from './OverrideMode';
 import './CompanyMode.css';
 
 const CompanyMode = ({ onBack }) => {
@@ -15,6 +18,13 @@ const CompanyMode = ({ onBack }) => {
     const [graphData, setGraphData] = useState({ nodes: [], links: [] });
     const [loading, setLoading] = useState(true);
     const [isNotesSidebarOpen, setIsNotesSidebarOpen] = useState(true);
+    const [isFullscreen, setIsFullscreen] = useState(false);
+
+    useEffect(() => {
+        if (activeTab !== 'visual') {
+            setIsFullscreen(false);
+        }
+    }, [activeTab]);
 
     useEffect(() => {
         fetchNotes();
@@ -74,14 +84,15 @@ const CompanyMode = ({ onBack }) => {
         { id: 'content', label: 'Content', icon: '🎨' },
         { id: 'calendar', label: 'Calendar', icon: '📅' },
         { id: 'projects', label: 'Projects', icon: '🚀' },
-        { id: 'memory', label: 'Memory', icon: '🧠' },
+        { id: 'cortex', label: 'Cortex', icon: '🧠' },
         { id: 'docs', label: 'Docs', icon: '📄' },
         { id: 'team', label: 'Team', icon: '👥' },
         { id: 'visual', label: 'Visual', icon: '👁️' },
+        { id: 'override', label: 'Override', icon: '⚡' },
     ];
 
     return (
-        <div className="company-mode-container">
+        <div className={`company-mode-container ${isFullscreen ? 'fullscreen' : ''} ${activeTab === 'visual' ? 'immersive-3d' : ''}`}>
             <aside className="company-sidebar">
                 <div className="sidebar-logo" onClick={onBack}>
                     <div className="logo-icon">PK</div>
@@ -96,7 +107,7 @@ const CompanyMode = ({ onBack }) => {
                             onClick={() => {
                                 setActiveTab(item.id);
                                 // Set default view per tab
-                                if (item.id === 'memory') setView('graph');
+                                if (item.id === 'cortex') setView('graph');
                                 else if (item.id === 'docs') setView('editor');
                             }}
                         >
@@ -118,56 +129,68 @@ const CompanyMode = ({ onBack }) => {
             </aside>
 
             <div className="company-content">
-                <header className="content-header">
-                    <div className="header-title">
-                        <h2>{navItems.find(i => i.id === activeTab)?.label.toUpperCase()}</h2>
-                        <span className="breadcrumb">HOME / {activeTab.toUpperCase()}</span>
-                    </div>
-                    {activeTab === 'docs' && (
-                        <div className="view-toggle">
-                            <button 
-                                className={view === 'editor' ? 'active' : ''} 
-                                onClick={() => setView('editor')}
-                            >
-                                📝 Editor
-                            </button>
+                {activeTab !== 'visual' && (
+                    <header className="content-header">
+                        <div className="header-title">
+                            <h2>{navItems.find(i => i.id === activeTab)?.label.toUpperCase()}</h2>
+                            <span className="breadcrumb">HOME / {activeTab.toUpperCase()}</span>
                         </div>
-                    )}
-                    {activeTab === 'memory' && (
-                        <div className="view-toggle">
-                            <button 
-                                className={view === 'graph' ? 'active' : ''} 
-                                onClick={() => setView('graph')}
-                            >
-                                🕸 Graph
-                            </button>
-                            <button 
-                                className={view === 'editor' ? 'active' : ''} 
-                                onClick={() => setView('editor')}
-                            >
-                                📝 Editor
-                            </button>
-                        </div>
-                    )}
-                </header>
+                        {activeTab === 'docs' && (
+                            <div className="view-toggle">
+                                <button 
+                                    className={view === 'editor' ? 'active' : ''} 
+                                    onClick={() => setView('editor')}
+                                >
+                                    📝 Editor
+                                </button>
+                            </div>
+                        )}
+                        {activeTab === 'cortex' && (
+                            <div className="view-toggle">
+                                <button 
+                                    className={view === 'graph' ? 'active' : ''} 
+                                    onClick={() => setView('graph')}
+                                >
+                                    🕸 Node Map
+                                </button>
+                                <button 
+                                    className={view === 'editor' ? 'active' : ''} 
+                                    onClick={() => setView('editor')}
+                                >
+                                    📝 Registry
+                                </button>
+                            </div>
+                        )}
+                    </header>
+                )}
 
-                <main className="content-body">
-                    {activeTab === 'visual' && <AgentOffice />}
+                <main className={`content-body ${activeTab === 'visual' ? 'no-padding' : ''}`}>
+                    {activeTab === 'visual' && (
+                        <AgentOffice 
+                            isFullscreen={isFullscreen}
+                            onToggleFullscreen={() => setIsFullscreen(!isFullscreen)}
+                        />
+                    )}
                     {activeTab === 'team' && <TeamStats />}
+                    {activeTab === 'override' && <OverrideMode />}
                     
-                    {/* === MEMORY TAB — Knowledge Graph + Deep Search === */}
-                    {activeTab === 'memory' && (
-                        <div className="docs-layout">
-                            <NotesSidebar 
-                                notes={notes} 
-                                selectedNote={selectedNote} 
-                                onSelect={handleNoteSelect}
-                                onCreate={handleCreateNote}
-                                isOpen={isNotesSidebarOpen}
-                                onToggle={() => setIsNotesSidebarOpen(!isNotesSidebarOpen)}
-                            />
+                    {/* === CORTEX TAB — NeuralOS Knowledge Graph + Pulse Live Feed === */}
+                    {activeTab === 'cortex' && (
+                        <div className="cortex-layout">
+                            {/* Left Panel: Memory Registry (Docs/Nodes) */}
+                            <div className="cortex-left-panel">
+                                <NotesSidebar 
+                                    notes={notes} 
+                                    selectedNote={selectedNote} 
+                                    onSelect={handleNoteSelect}
+                                    onCreate={handleCreateNote}
+                                    isOpen={isNotesSidebarOpen}
+                                    onToggle={() => setIsNotesSidebarOpen(!isNotesSidebarOpen)}
+                                />
+                            </div>
                             
-                            <div className="docs-main">
+                            {/* Center Panel: Visualization or Editor */}
+                            <div className="cortex-center-panel">
                                 {view === 'editor' ? (
                                     selectedNote ? (
                                         <NoteEditor 
@@ -184,7 +207,7 @@ const CompanyMode = ({ onBack }) => {
                                         </div>
                                     )
                                 ) : (
-                                    <KnowledgeGraph 
+                                    <Cortex3DGraph 
                                         data={graphData} 
                                         onNodeClick={(id) => {
                                             const note = notes.find(n => n.id === id || n.path === id);
@@ -192,6 +215,11 @@ const CompanyMode = ({ onBack }) => {
                                         }}
                                     />
                                 )}
+                            </div>
+
+                            {/* Right Panel: Pulse Live Feed */}
+                            <div className="cortex-right-panel">
+                                <PulseLiveFeed />
                             </div>
                         </div>
                     )}
@@ -227,7 +255,7 @@ const CompanyMode = ({ onBack }) => {
                         </div>
                     )}
 
-                    {activeTab !== 'visual' && activeTab !== 'team' && activeTab !== 'docs' && activeTab !== 'memory' && (
+                    {activeTab !== 'visual' && activeTab !== 'team' && activeTab !== 'docs' && activeTab !== 'cortex' && activeTab !== 'override' && (
                         <div className="coming-soon">
                             <div className="glitch-text" data-text="SYSTEM_UNDER_DEVELOPMENT">SYSTEM_UNDER_DEVELOPMENT</div>
                             <p>This module is currently being calibrated by the Software Team.</p>

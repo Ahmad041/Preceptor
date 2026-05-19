@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import AgentRoom from './AgentRoom';
+import { ErrorBoundary } from 'react-error-boundary';
+import GatherEngine from './GatherEngine';
+import GatherEngine3D from './GatherEngine3D';
 import CommandConsole from './CommandConsole';
 import axios from 'axios';
 import './AgentOffice.css';
@@ -10,7 +12,7 @@ const AGENTS = [
         name: "Project Lead",
         role: "Orchestrator & Strategy",
         character: "seika",
-        color: "red",
+        color: "#e74c3c",
         isMain: true,
     },
     {
@@ -18,50 +20,53 @@ const AGENTS = [
         name: "Software Team",
         role: "Full-Stack & Systems",
         character: "bocchi",
-        color: "cyan",
+        color: "#3498db",
     },
     {
         id: "docs",
         name: "Document Team",
         role: "Admin & Standards",
         character: "ryo",
-        color: "blue",
+        color: "#2ecc71",
     },
     {
         id: "mon",
         name: "Monitoring System",
         role: "Stability Guardian",
         character: "pa-san",
-        color: "purple",
+        color: "#f39c12",
     },
     {
         id: "scout",
         name: "Web Scout",
         role: "Digital Intelligence",
         character: "hiroi",
-        color: "orange",
+        color: "#9b59b6",
     },
     {
         id: "analyst",
         name: "Research Analyst",
         role: "Strategic Decisions",
         character: "kita",
-        color: "pink",
+        color: "#1abc9c",
     },
     {
         id: "content",
         name: "Content Producer",
         role: "Creative Voice",
         character: "nijika",
-        color: "yellow",
+        color: "#e91e63",
     }
 ];
 
-const AgentOffice = () => {
+const AgentOffice = ({ isFullscreen, onToggleFullscreen }) => {
     const [selectedAgent, setSelectedAgent] = useState(null);
     const [systemStats, setSystemStats] = useState(null);
+    const [is3DMode, setIs3DMode] = useState(true);
     const [agentActivity, setAgentActivity] = useState({});
     const [financeData, setFinanceData] = useState(null);
+
+    const [consoleHistory, setConsoleHistory] = useState({});
 
     // Poll system stats setiap 3 detik
     useEffect(() => {
@@ -116,57 +121,85 @@ const AgentOffice = () => {
     };
 
     return (
-        <div className="agent-office-container">
-            <div className="office-scroll-area">
-                <div className="office-grid">
+        <div className={`agent-office-container ${isFullscreen ? 'fullscreen' : ''}`}>
+            {/* Left Sidebar for Stats and Activity */}
+            <div className="delegation-sidebar">
+                <div className="sidebar-header">
+                    <h2>SYSTEM STATUS</h2>
+                    {systemStats && <div className="live-indicator"></div>}
+                </div>
+                
+                <div className="sidebar-section">
+                    <div className="stat-row">
+                        <span className="stat-label">AGENTS</span>
+                        <span className="stat-value">{systemStats ? `${systemStats.active_agents}/${systemStats.total_agents}` : '0/6'}</span>
+                    </div>
+                    <div className="stat-row">
+                        <span className="stat-label">CPU</span>
+                        <span className="stat-value">{systemStats ? `${systemStats.cpu_percent}%` : '--'}</span>
+                    </div>
+                    <div className="stat-row">
+                        <span className="stat-label">RAM</span>
+                        <span className="stat-value">{systemStats ? `${systemStats.ram_used_gb}/${systemStats.ram_total_gb}GB` : '--'}</span>
+                    </div>
+                    <div className="stat-row">
+                        <span className="stat-label">UPTIME</span>
+                        <span className="stat-value">{systemStats ? systemStats.uptime : '--'}</span>
+                    </div>
+                </div>
+
+                <div className="sidebar-header" style={{ marginTop: '20px' }}>
+                    <h2>AGENT ACTIVITY</h2>
+                </div>
+                <div className="sidebar-activity-list">
                     {AGENTS.map(agent => (
-                        <AgentRoom 
-                            key={agent.id}
-                            {...agent}
-                            isActive={selectedAgent?.id === agent.id}
-                            status={agentActivity[agent.id]?.status || "standby"}
-                            logs={agentActivity[agent.id]?.logs || []}
-                            activityBars={agentActivity[agent.id]?.activity_bars || []}
-                            onClick={() => setSelectedAgent(agent)}
-                            className={agent.isMain ? 'is-main' : ''}
-                        />
+                        <div key={agent.id} className="activity-item" onClick={() => handleSelectAgent(agent)}>
+                            <div className="activity-agent-name" style={{ color: agent.color }}>
+                                {agent.name}
+                            </div>
+                            <div className="activity-agent-status">
+                                {agentActivity[agent.id] ? 
+                                    (typeof agentActivity[agent.id] === 'string' ? agentActivity[agent.id] : agentActivity[agent.id].task || 'Idle') 
+                                    : 'Idle'}
+                            </div>
+                        </div>
                     ))}
                 </div>
             </div>
 
-            {/* FINANCE STATS PANEL */}
-            <div className="finance-stats-panel">
-                <div className="finance-header">
-                    <h3>KESSOKU BUDGET MONITOR</h3>
-                    <div className="total-spent">
-                        TOTAL SPENT: <span>{financeData?.spent?.toFixed(1) || 0} KP</span>
-                    </div>
+            {/* Main Area */}
+            <div className="office-main-area">
+                <div className="top-actions">
+                    <button onClick={onToggleFullscreen} className="delegation-btn">
+                        {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+                    </button>
+                    {!isFullscreen && (
+                        <button onClick={() => setIs3DMode(!is3DMode)} className="delegation-btn primary">
+                            {is3DMode ? 'Switch to 2D' : 'Switch to 3D Dorm'}
+                        </button>
+                    )}
                 </div>
-                <div className="finance-bars-container">
-                    {AGENTS.map(agent => {
-                        const agentFin = financeData?.agents?.[agent.id] || { kessoku: 0 };
-                        // Max bar width reference (e.g. 5000 KP)
-                        const percentage = Math.min(100, (agentFin.kessoku / 2000) * 100);
-                        
-                        return (
-                            <div className="finance-row" key={agent.id}>
-                                <div className="agent-label">
-                                    <span className={`dot ${agent.color}`}></span>
-                                    {agent.id.toUpperCase()}
-                                </div>
-                                <div className="bar-wrapper">
-                                    <div 
-                                        className={`bar ${agent.color}`} 
-                                        style={{ width: `${percentage}%` }}
-                                    ></div>
-                                    <span className="value-label">{agentFin.kessoku?.toFixed(0)} KP</span>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-                <div className="finance-footer">
-                    *1 token ≈ 0.1 Kessoku Points (KP)
+
+                <div className="office-scroll-area">
+                    <ErrorBoundary fallbackRender={({error}) => <div style={{padding: 20, color: 'red'}}><h2>Crash</h2><pre>{error.message}</pre></div>}>
+                        {is3DMode ? (
+                            <GatherEngine3D 
+                                agents={AGENTS}
+                                onSelectAgent={handleSelectAgent}
+                                agentActivity={agentActivity}
+                                financeData={financeData}
+                                isFullscreen={isFullscreen}
+                            />
+                        ) : (
+                            <GatherEngine 
+                                agents={AGENTS}
+                                onSelectAgent={handleSelectAgent}
+                                agentActivity={agentActivity}
+                                financeData={financeData}
+                                isFullscreen={isFullscreen}
+                            />
+                        )}
+                    </ErrorBoundary>
                 </div>
             </div>
 
@@ -176,45 +209,19 @@ const AgentOffice = () => {
                     onClose={() => setSelectedAgent(null)} 
                     sources={agentActivity[selectedAgent.id]?.sources || []}
                     logs={agentActivity[selectedAgent.id]?.logs || []}
+                    history={consoleHistory[selectedAgent.id] || []}
+                    setHistory={(newHistory) => {
+                        setConsoleHistory(prev => {
+                            const currentHistory = prev[selectedAgent.id] || [];
+                            const resolvedHistory = typeof newHistory === 'function' ? newHistory(currentHistory) : newHistory;
+                            return {
+                                ...prev,
+                                [selectedAgent.id]: resolvedHistory
+                            };
+                        });
+                    }}
                 />
             )}
-
-            <div className="agent-status-footer">
-                <div className="status-item">
-                    <span className="label">AGENTS:</span>
-                    <span className="value">
-                        {systemStats 
-                            ? `${systemStats.active_agents}/${systemStats.total_agents}` 
-                            : '0/6'}
-                    </span>
-                </div>
-                <div className="status-item">
-                    <span className="label">CPU:</span>
-                    <span className="value">
-                        {systemStats ? `${systemStats.cpu_percent}%` : '--'}
-                    </span>
-                </div>
-                <div className="status-item">
-                    <span className="label">RAM:</span>
-                    <span className="value">
-                        {systemStats 
-                            ? `${systemStats.ram_used_gb}/${systemStats.ram_total_gb}GB` 
-                            : '--'}
-                    </span>
-                </div>
-                <div className="status-item">
-                    <span className="label">UPTIME:</span>
-                    <span className="value">
-                        {systemStats ? systemStats.uptime : '--'}
-                    </span>
-                </div>
-                <div className="mission-title">
-                    MISSION CONTROL: INKY ONLINE
-                    {systemStats && (
-                        <span className="live-dot" title={`Last sync: ${systemStats.timestamp}`}></span>
-                    )}
-                </div>
-            </div>
         </div>
     );
 };

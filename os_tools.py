@@ -1,4 +1,5 @@
 import os
+import sys
 import subprocess
 import datetime
 import requests
@@ -151,6 +152,63 @@ def is_safe_path(target_path: str):
             
     return True, ""
 
+def jalankan_python(params: str) -> str:
+    """
+    Menjalankan kode Python secara dinamis.
+    Param: path_file atau konten_kode
+    """
+    if not params:
+        return "Parameter diperlukan."
+    
+    # Jika params adalah path file yang ada
+    if os.path.exists(params) and os.path.isfile(params):
+        try:
+            result = subprocess.run([sys.executable, params], capture_output=True, text=True, timeout=30)
+            output = result.stdout
+            error = result.stderr
+            return f"--- OUTPUT ---\n{output}\n\n--- ERROR ---\n{error}" if error else output
+        except Exception as e:
+            return f"Gagal menjalankan file python: {str(e)}"
+    
+    # Jika params adalah kode langsung
+    try:
+        # Gunakan temp file untuk keamanan dan kemudahan
+        temp_file = "temp_eval.py"
+        with open(temp_file, "w", encoding="utf-8") as f:
+            f.write(params)
+        
+        result = subprocess.run([sys.executable, temp_file], capture_output=True, text=True, timeout=30)
+        output = result.stdout
+        error = result.stderr
+        
+        # Bersihkan temp file
+        if os.path.exists(temp_file):
+            os.remove(temp_file)
+            
+        return f"--- OUTPUT ---\n{output}\n\n--- ERROR ---\n{error}" if error else output
+    except Exception as e:
+        return f"Gagal eksekusi kode python: {str(e)}"
+
+def jalankan_perintah_terminal(command: str) -> str:
+    """Menjalankan perintah terminal (CMD/PowerShell)."""
+    if not command:
+        return "Command tidak boleh kosong."
+        
+    # Blacklist perintah berbahaya
+    blacklist = ["rmdir /s", "del /f /s", "format ", "mkfs", "shutdown", "reg delete"]
+    for b in blacklist:
+        if b in command.lower():
+            return f"[SECURITY] Perintah '{b}' dilarang demi keamanan sistem."
+
+    try:
+        # Gunakan shell=True untuk Windows agar perintah seperti 'dir' jalan
+        result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=30)
+        output = result.stdout
+        error = result.stderr
+        return f"--- OUTPUT ---\n{output}\n\n--- ERROR ---\n{error}" if error else output
+    except Exception as e:
+        return f"Gagal menjalankan perintah: {str(e)}"
+
 def buat_folder(nama_folder: str) -> str:
     try:
         os.makedirs(nama_folder, exist_ok=True)
@@ -232,18 +290,98 @@ def buka_aplikasi(nama_app: str) -> str:
     except Exception as e:
         return f"Gagal membuka aplikasi: {str(e)}"
 
-def cari_di_internet(query: str) -> str:
-    """Mencari informasi di internet menggunakan DuckDuckGo."""
+def cari_di_internet(query: str, agent_id: str = None) -> str:
+    """Mencari informasi di internet menggunakan DuckDuckGo dengan focus-mode filtering dan re-ranking."""
+    import numpy as np
+
+    # Focus mode domain maps
+    FOCUS_DOMAINS = {
+        "academic": ["scholar.google.com", "arxiv.org", "semanticscholar.org", "nature.com", "researchgate.net"],
+        "code": ["github.com", "stackoverflow.com", "dev.to", "docs.python.org"],
+        "youtube": ["youtube.com/watch"],
+        "reddit": ["reddit.com"],
+    }
+
+    # Resolve active focus modes
+    active_modes = []
+    if agent_id:
+        try:
+            import agent_logger
+            active_modes = agent_logger.get_agent_focus_modes(agent_id)
+        except Exception:
+            pass
+
+    # Build domain-scoped queries
+    target_domains = []
+    for mode in active_modes:
+        if mode in FOCUS_DOMAINS:
+            target_domains.extend(FOCUS_DOMAINS[mode])
+
+    # Writing mode — skip internet entirely
+    if "writing" in active_modes:
+        return "[WRITING MODE] Pencarian internet dinonaktifkan. Gunakan pengetahuan internal untuk komposisi teks."
+
     try:
-        results = DDGS().text(query, max_results=5)
+        # If specific focus domains are set, build site-scoped queries
+        if target_domains and "all" not in active_modes:
+            site_filter = " OR ".join([f"site:{d}" for d in target_domains])
+            scoped_query = f"{query} ({site_filter})"
+            results = DDGS().text(scoped_query, max_results=8)
+        else:
+            results = DDGS().text(query, max_results=5)
+
         if not results:
             return "Tidak ada hasil ditemukan."
-        
+
+        # === PHASE 1: Basic search results ===
         output = "Hasil Pencarian Internet:\n\n"
         for i, res in enumerate(results):
             output += f"{i+1}. Judul: {res.get('title', '')}\n"
             output += f"   URL: {res.get('href', '')}\n"
             output += f"   Cuplikan: {res.get('body', '')}\n\n"
+
+        # === PHASE 2: Re-ranking via embedding similarity (top 3 URLs) ===
+        try:
+            from embedding_engine import embedding_engine
+            query_vec = embedding_engine.embed_query(query)
+
+            if query_vec is not None:
+                top_urls = [r.get('href', '') for r in results[:3] if r.get('href')]
+                ranked_chunks = []
+
+                for url in top_urls:
+                    try:
+                        page_text = baca_halaman_web(url)
+                        if "Gagal" in page_text or len(page_text) < 100:
+                            continue
+
+                        # Chunk the page text into ~500 char paragraphs
+                        paragraphs = [page_text[i:i+500] for i in range(0, min(len(page_text), 3000), 500)]
+                        for para in paragraphs:
+                            para_vec = embedding_engine.embed_text(para.strip())
+                            if para_vec is not None:
+                                score = float(np.dot(query_vec, para_vec))
+                                ranked_chunks.append({
+                                    "text": para.strip()[:300],
+                                    "url": url,
+                                    "score": score
+                                })
+                    except Exception:
+                        continue
+
+                # Sort by relevance score, take top 5 chunks
+                ranked_chunks.sort(key=lambda x: x["score"], reverse=True)
+                top_chunks = ranked_chunks[:5]
+
+                if top_chunks:
+                    output += "\n--- Konten Paling Relevan (Re-ranked) ---\n\n"
+                    for idx, chunk in enumerate(top_chunks, 1):
+                        output += f"[{idx}] (relevance: {chunk['score']:.3f}) {chunk['url']}\n"
+                        output += f"    {chunk['text']}\n\n"
+        except Exception as e:
+            # Re-ranking is optional enhancement — don't break search if it fails
+            output += f"\n[INFO] Re-ranking dilewati: {e}\n"
+
         return output
     except Exception as e:
         return f"Gagal mencari di internet: {str(e)}"
@@ -251,8 +389,40 @@ def cari_di_internet(query: str) -> str:
 import io
 import PyPDF2
 
+def _baca_dengan_playwright(url: str, timeout_ms: int = 15000) -> str:
+    """Fallback: Baca halaman web dinamis menggunakan Playwright (headless Chromium)."""
+    try:
+        from playwright.sync_api import sync_playwright
+        
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            page.goto(url, wait_until="networkidle", timeout=timeout_ms)
+            page.wait_for_timeout(2000)  # Extra wait for lazy-loaded content
+            
+            # Remove noise elements
+            for selector in ["script", "style", "nav", "footer", "header", "aside", "iframe", "noscript"]:
+                page.evaluate(f'document.querySelectorAll("{selector}").forEach(e => e.remove())')
+            
+            text = page.inner_text("body")
+            browser.close()
+            
+            # Clean up
+            lines = (line.strip() for line in text.splitlines())
+            teks_bersih = '\n'.join(line for line in lines if line)
+            
+            return teks_bersih
+    except ImportError:
+        return None
+    except Exception as e:
+        return None
+
+
 def baca_halaman_web(url: str) -> str:
-    """Membaca teks dari sebuah URL web atau file PDF online."""
+    """Membaca teks dari sebuah URL web atau file PDF online.
+    Strategi: requests+BS4 dulu, fallback ke Playwright jika konten terlalu sedikit."""
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
@@ -284,8 +454,21 @@ def baca_halaman_web(url: str) -> str:
         chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
         teks_bersih = '\n'.join(chunk for chunk in chunks if chunk)
         
+        # === PLAYWRIGHT FALLBACK ===
+        # Jika konten statis terlalu sedikit, coba Playwright untuk halaman dinamis/SPA
+        if len(teks_bersih) < 200:
+            print(f"[WEB READER] Konten statis terlalu sedikit ({len(teks_bersih)} chars), mencoba Playwright...")
+            pw_result = _baca_dengan_playwright(url)
+            if pw_result and len(pw_result) > len(teks_bersih):
+                return f"Isi dari {url} (via Playwright - dynamic rendering):\n\n{pw_result}"
+        
         return f"Isi dari {url}:\n\n{teks_bersih}"
     except Exception as e:
+        # Last resort: try Playwright if requests failed entirely
+        print(f"[WEB READER] requests gagal: {e}, mencoba Playwright...")
+        pw_result = _baca_dengan_playwright(url)
+        if pw_result:
+            return f"Isi dari {url} (via Playwright fallback):\n\n{pw_result}"
         return f"Gagal membaca halaman web/PDF: {str(e)}"
 
 def buka_web_di_browser(url: str) -> str:
@@ -295,6 +478,16 @@ def buka_web_di_browser(url: str) -> str:
         return f"Berhasil membuka {url} di browser."
     except Exception as e:
         return f"Gagal membuka browser: {str(e)}"
+
+def analisa_saham_otomatis(ticker: str) -> str:
+    """Memanggil mesin prediksi saham menggunakan data xvary-stock-research."""
+    if not ticker:
+        return "Ticker saham tidak diberikan. Contoh: AAPL"
+    try:
+        from stock_strategy import analyze_stock
+        return analyze_stock(ticker)
+    except Exception as e:
+        return f"Gagal menganalisa saham {ticker}: {str(e)}"
 
 SAFE_TOOLS = {
     "buat_folder": buat_folder,
@@ -308,7 +501,8 @@ SAFE_TOOLS = {
     "baca_halaman_web": baca_halaman_web,
     "buka_web_di_browser": buka_web_di_browser,
     "baca_jadwal_google_calendar": baca_jadwal_google_calendar,
-    "tambah_jadwal_google_calendar": tambah_jadwal_google_calendar
+    "tambah_jadwal_google_calendar": tambah_jadwal_google_calendar,
+    "analisa_saham_otomatis": analisa_saham_otomatis
 }
 
 def get_tool_choice_from_ai(user_prompt: str) -> dict:
@@ -332,7 +526,8 @@ def get_tool_choice_from_ai(user_prompt: str) -> dict:
     10. "buka_web_di_browser": Membuka URL web agar bisa langsung dilihat oleh pengguna di layar (bukan untuk AI). Param: "url" (string, harus link http/https).
     11. "baca_jadwal_google_calendar": Mengambil jadwal hari ini dari Google Calendar. Param: "".
     12. "tambah_jadwal_google_calendar": Menambahkan acara ke Google Calendar. Param: "nama_acara|||YYYY-MM-DDTHH:MM:SS" (cth: "Meeting|||2023-10-25T14:30:00").
-    13. "none": Jika tidak memerlukan tindakan komputer sama sekali (hanya ngobrol).
+    13. "analisa_saham_otomatis": Menganalisa sebuah saham dan memberikan prediksi/skor kelayakannya. Param: "simbol_saham" (cth: "AAPL").
+    14. "none": Jika tidak memerlukan tindakan komputer sama sekali (hanya ngobrol).
     '''
     
     system_prompt = f"""Anda adalah asisten pengontrol komputer yang cerdas. Tentukan apakah pesan pengguna memerlukan aksi pada komputer atau tidak.
