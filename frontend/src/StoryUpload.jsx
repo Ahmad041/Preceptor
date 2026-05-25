@@ -25,21 +25,34 @@ export default function StoryUpload({ onGenerated, onBack }) {
     setProgress('Bocchi sedang membaca dokumenmu...');
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('user_nama', nama.trim());
-      formData.append('user_hubungan', hubungan.trim());
-      formData.append('use_audio', useAudio ? 'true' : 'false');
-      
-      const savedGroups = localStorage.getItem('story_groups');
-      if (savedGroups) {
-        formData.append('existing_groups', savedGroups);
-      }
+      // Fungsi untuk melakukan request
+      const sendRequest = async (isRegenerate = false, userFeedback = '') => {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('user_nama', nama.trim());
+        formData.append('user_hubungan', hubungan.trim());
+        formData.append('use_audio', useAudio ? 'true' : 'false');
+        
+        const savedGroups = localStorage.getItem('story_groups');
+        if (savedGroups) {
+          formData.append('existing_groups', savedGroups);
+        }
 
-      setProgress('Mengekstrak teks dari dokumen...');
-      
+        if (isRegenerate) {
+          formData.append('force_regenerate', 'true');
+          if (userFeedback) {
+            formData.append('feedback', userFeedback);
+          }
+        }
+
+        return await axios.post('http://localhost:8000/api/story/generate', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          timeout: 0,
+        });
+      };
+
       // Simulate progress updates (actual generation is one long request)
-      const progressTimer = setInterval(() => {
+      let progressTimer = setInterval(() => {
         setProgress(prev => {
           const msgs = [
             'Bocchi sedang membaca dokumenmu...',
@@ -54,16 +67,53 @@ export default function StoryUpload({ onGenerated, onBack }) {
         });
       }, 8000);
 
-      const res = await axios.post('http://localhost:8000/api/story/generate', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 0, // Tidak ada timeout agar generasi lokal yang lama tidak gagal
-      });
+      let res = await sendRequest();
+
+      // Cek apakah file sudah di-cache
+      if (res.data.status === 'cache_exists') {
+        clearInterval(progressTimer); // stop loading sementara
+        
+        // Memunculkan prompt untuk regenrasi
+        const userPrompt = window.prompt(
+          'File ini sudah pernah di-generate sebelumnya.\n\n' +
+          'Apakah mau di-generate ulang?\n' +
+          'Jika iya, ketikkan apa yang kurang/kriteria tambahannya di bawah ini.\n' +
+          'Kosongkan lalu tekan Batal jika tidak.'
+        );
+
+        if (userPrompt === null) {
+          // User menekan batal
+          setLoading(false);
+          return;
+        } else {
+          // User menekan OK (dengan atau tanpa teks feedback)
+          setLoading(true);
+          setProgress('Memproses ulang dengan kriteria tambahan...');
+          
+          // Mulai ulang timer loading jika diperlukan
+          progressTimer = setInterval(() => {
+            setProgress(prev => {
+              const msgs = [
+                'Bocchi memproses ulang dokumenmu...',
+                'Menambahkan kriteria tambahan...',
+                'Bocchi sedang menulis dialog ulang... (>_<)',
+                'Masih nulis... sabar ya Senpai...',
+                'Hampir selesai... mungkin...',
+                'Bocchi berusaha keras! ᕦ(ò_óˇ)ᕤ',
+              ];
+              const idx = msgs.indexOf(prev);
+              return msgs[Math.min(idx + 1, msgs.length - 1)];
+            });
+          }, 8000);
+          res = await sendRequest(true, userPrompt.trim());
+        }
+      }
 
       clearInterval(progressTimer);
 
       if (res.data.status === 'berhasil') {
         onGenerated(res.data, { nama: nama.trim(), hubungan: hubungan.trim() });
-      } else {
+      } else if (res.data.status !== 'cache_exists') { // Jika bukan respons awal cache_exists yg terlewat
         alert('Gagal generate story: ' + (res.data.error || 'Unknown error'));
         setLoading(false);
       }
