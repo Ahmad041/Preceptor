@@ -1,23 +1,38 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request as FastAPIRequest
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
 import requests
 import datetime
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
+try:
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from google.auth.transport.requests import Request
+    from googleapiclient.discovery import build
+    GOOGLE_AUTH_AVAILABLE = True
+except ImportError:
+    GOOGLE_AUTH_AVAILABLE = False
+    Credentials = None
 import base64
+import hashlib
 import os
 import asyncio
 import io
+import re
 import numpy as np
 import json
-import re
-import time
-import soundfile as sf
+import asyncio
+from datetime import datetime as dt
 from dotenv import load_dotenv
-import google.generativeai as genai
+
+try:
+    import google.generativeai as genai
+    GENAI_AVAILABLE = True
+except ImportError:
+    GENAI_AVAILABLE = False
+    genai = None
+
 from PIL import ImageGrab
 import psutil
 import os_tools
@@ -28,6 +43,20 @@ from notes_engine import notes_index, build_note_metadata, get_watched_folders, 
 from embedding_engine import embedding_engine
 import desktop_pilot
 from vision_loop import vision_engine
+from jarvis_orchestrator import jarvis
+from gitnexus_runner import gitnexus_server
+from omniscient import omniscient
+
+# MCP Support
+try:
+    from mcp.server.sse import SseServerTransport
+    from mcp_server import bocchi_mcp_server
+    from mcp_client import mcp_registry
+except ImportError:
+    SseServerTransport = None
+    bocchi_mcp_server = None
+    mcp_registry = None
+    print("[WARNING] MCP module not found, MCP features will be disabled.")
 
 load_dotenv()
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
@@ -83,12 +112,20 @@ app.add_middleware(
 async def startup_event():
     print("\n[SISTEM] Initializing Company Mode...")
     
+    # Start GitNexus Server
+    gitnexus_server.start()
+    
     # 1. Load notes index from cache or scan
     if not notes_index.load_cache():
         notes_index.scan_all()
     
     # 2. Background embedding generation (so startup is not blocked)
     asyncio.create_task(initialize_embeddings())
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    print("\n[SISTEM] Shutting down...")
+    gitnexus_server.stop()
 
 async def initialize_embeddings():
     print("[SISTEM] Generating/Updating Note Embeddings...")
@@ -99,7 +136,7 @@ async def initialize_embeddings():
         print(f"[WARNING] Gagal generate embeddings: {e}")
 
 # ============================================================
-# NOTE MODELS
+# 3. JARVIS ORCHESTRATOR
 # ============================================================
 class NoteCreate(BaseModel):
     title: str
@@ -118,6 +155,21 @@ class DeepSearchRequest(BaseModel):
     query: str
     include_web: bool = True
 
+class UnifiedSearchRequest(BaseModel):
+    query: str
+
+
+# ============================================================
+# OMNISCIENT (Unified Knowledge Hub)
+# ============================================================
+@app.post("/api/knowledge/search")
+async def unified_knowledge_search(req: UnifiedSearchRequest):
+    try:
+        results = omniscient.unified_search(req.query)
+        return {"status": "success", "data": results}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 # ============================================================
 # 1. INISIALISASI QWEN3-TTS (Voice Cloning Mode)
 # ============================================================
@@ -128,28 +180,28 @@ REFERENSI_SUARA = "bocchi_referensi.wav"  # File referensi suara Bocchi
 print("\n[SISTEM] Memuat Qwen3-TTS model...")
 try:
     from qwen_tts import Qwen3TTSModel
-    device_tts = "cuda" if torch.cuda.is_available() else "cpu"
+    device_tts = "cpu"
     QWEN_TTS_MODEL = Qwen3TTSModel.from_pretrained(
         "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
         device_map=device_tts,
         torch_dtype=torch.bfloat16,
         attn_implementation="sdpa",  # PyTorch built-in SDPA — lebih cepat tanpa install apapun
     )
-    print("[SISTEM] [OK] Qwen3-TTS berhasil dimuat dengan SDPA!")
+    print("[SISTEM] [OK] Qwen3-TTS berhasil dimuat dengan SDPA di CPU!")
 except Exception as e:
-    print(f"[WARNING] Gagal memuat Qwen3-TTS dengan SDPA: {e}")
-    print("[SISTEM] Mencoba tanpa SDPA...")
+    print(f"[WARNING] Gagal memuat Qwen3-TTS dengan SDPA di CPU: {e}")
+    print("[SISTEM] Mencoba tanpa SDPA di CPU...")
     try:
         from qwen_tts import Qwen3TTSModel
-        device_tts = "cuda" if torch.cuda.is_available() else "cpu"
+        device_tts = "cpu"
         QWEN_TTS_MODEL = Qwen3TTSModel.from_pretrained(
             "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
             device_map=device_tts,
             torch_dtype=torch.bfloat16,
         )
-        print("[SISTEM] [OK] Qwen3-TTS berhasil dimuat (tanpa SDPA)!")
+        print("[SISTEM] [OK] Qwen3-TTS berhasil dimuat di CPU (tanpa SDPA)!")
     except Exception as e2:
-        print(f"[WARNING] Gagal memuat Qwen3-TTS: {e2}")
+        print(f"[WARNING] Gagal memuat Qwen3-TTS di CPU: {e2}")
         QWEN_TTS_MODEL = None
 
 # Mapping emosi → instruksi suara Qwen3-TTS
@@ -954,6 +1006,9 @@ async def get_projects_stats():
 # ============================================================
 
 STORY_CHUNK_SIZE = 1500  # Lebih besar dari RAG chunks agar konteks per scene lebih kaya
+STORY_CACHE_DIR = "story_cache"
+os.makedirs(STORY_CACHE_DIR, exist_ok=True)
+
 
 def potong_teks_untuk_story(teks: str, chunk_size=STORY_CHUNK_SIZE) -> List[str]:
     """Memotong teks dokumen menjadi bagian-bagian untuk story generation.
@@ -1073,14 +1128,14 @@ Contoh jika grup baru:
         }
 
 
-def generate_scenes_from_chunk(chunk_text: str, chunk_index: int, total_chunks: int, user_nama: str = "Senpai") -> List[dict]:
+def generate_scenes_from_chunk(chunk_text: str, chunk_index: int, total_chunks: int, user_nama: str = "Senpai", feedback: str = None) -> List[dict]:
     """Menggunakan Ollama lokal untuk mengubah satu chunk teks menjadi scene VN."""
     os_tools.ensure_ollama_running()
     
     prompt = f"""Kamu adalah penulis skrip Visual Novel. Ubah teks materi berikut menjadi 1-3 scene dialog dari karakter "Bocchi" (gadis pemalu, gugup, sering gagap "u-um...", "a-ah!", pakai kaomoji).
 
 Bocchi sedang menjelaskan materi ini ke {user_nama} (temannya).
-
+{f"\nKRITERIA TAMBAHAN DARI PENGGUNA UNTUK GENERASI INI: {feedback}\n" if feedback else ""}
 MATERI (bagian {chunk_index + 1} dari {total_chunks}):
 \"\"\"
 {chunk_text[:2000]}
@@ -1193,14 +1248,23 @@ async def generate_story(
     user_nama: str = Form("Senpai"),
     user_hubungan: str = Form("Teman"),
     existing_groups: Optional[str] = Form(None),
-    use_audio: str = Form("true")
+    use_audio: str = Form("true"),
+    force_regenerate: str = Form("false"),
+    feedback: Optional[str] = Form(None)
 ):
     """Upload dokumen → parse → chunk → generate VN scenes via Ollama lokal"""
     try:
         print(f"\n[STORY] === Generating Story from '{file.filename}' ===")
         
-        # 1. Ekstrak teks (reuse fungsi existing)
         konten = await file.read()
+        file_hash = hashlib.sha256(konten).hexdigest()
+        cache_file_path = os.path.join(STORY_CACHE_DIR, f"{file_hash}.json")
+        
+        # Cek cache
+        if os.path.exists(cache_file_path) and force_regenerate.lower() != "true":
+            return {"status": "cache_exists", "message": "File ini sudah pernah di-generate."}
+            
+        # 1. Ekstrak teks (reuse fungsi existing)
         teks = ekstrak_teks_dari_file(file.filename, konten)
         
         if not teks.strip() or len(teks.strip()) < 50:
@@ -1216,7 +1280,7 @@ async def generate_story(
         all_scenes = []
         for i, chunk in enumerate(chunks):
             print(f"[STORY] Generating scenes untuk bagian {i+1}/{len(chunks)}...")
-            scenes = generate_scenes_from_chunk(chunk, i, len(chunks), user_nama)
+            scenes = generate_scenes_from_chunk(chunk, i, len(chunks), user_nama, feedback=feedback)
             all_scenes.extend(scenes)
             print(f"[STORY]   → {len(scenes)} scene(s) dihasilkan")
         
@@ -1300,7 +1364,7 @@ async def generate_story(
                 scene["audio_file"] = None
             print(f"[STORY] ✅ Selesai! Total {len(final_scenes)} scenes generated (tanpa audio)")
         
-        return {
+        result_data = {
             "status": "berhasil",
             "filename": file.filename,
             "total_scenes": len(final_scenes),
@@ -1310,6 +1374,11 @@ async def generate_story(
             "is_new_group": classification.get("is_new_group", True),
             "group_id": classification.get("group_id")
         }
+        
+        with open(cache_file_path, "w", encoding="utf-8") as f:
+            json.dump(result_data, f, ensure_ascii=False, indent=2)
+            
+        return result_data
         
     except Exception as e:
         print(f"[STORY ERROR] {e}")
@@ -2140,3 +2209,412 @@ async def get_vision_status_api():
         "running": vision_engine.is_running(),
         "current": vision_engine.get_current_analysis()
     }
+
+# ============================================================
+# BOCCHI-JARVIS — Local AI Orchestrator APIs
+# ============================================================
+
+# Wire vision engine callback to jarvis orchestrator
+vision_engine.set_analysis_callback(jarvis.update_vision_context)
+
+class JarvisProfileRequest(BaseModel):
+    nama: str
+    hubungan: Optional[str] = ""
+
+class JarvisChatRequest(BaseModel):
+    message: str
+    context: Optional[dict] = None
+    voice_enabled: Optional[bool] = False
+
+class JarvisModelSwitchRequest(BaseModel):
+    model: str  # "brain", "vision", "coder"
+
+@app.post("/api/jarvis/profile")
+async def set_jarvis_profile(data: JarvisProfileRequest):
+    """Set user profile untuk BOCCHI-JARVIS."""
+    jarvis.set_user_profile({"nama": data.nama, "hubungan": data.hubungan})
+    return {"status": "ok", "profile": jarvis.get_user_profile()}
+
+@app.get("/api/jarvis/profile")
+async def get_jarvis_profile():
+    """Get user profile BOCCHI-JARVIS."""
+    return jarvis.get_user_profile()
+
+@app.get("/api/jarvis/status")
+async def get_jarvis_status():
+    """Get full status BOCCHI-JARVIS (model, profile, conversation)."""
+    return jarvis.get_status()
+
+@app.get("/api/jarvis/models")
+async def get_jarvis_models():
+    """Cek model Ollama mana yang sudah ter-install."""
+    return jarvis.check_ollama_models()
+
+@app.post("/api/jarvis/switch")
+async def switch_jarvis_model(data: JarvisModelSwitchRequest):
+    """Hot-swap model aktif (brain/vision/coder)."""
+    return jarvis.switch_model(data.model)
+
+@app.post("/api/jarvis/chat")
+async def jarvis_chat(data: JarvisChatRequest):
+    """Chat dengan BOCCHI-JARVIS via Ollama lokal."""
+    result = jarvis.process(data.message, data.context)
+    
+    # Jika voice_enabled, buat audio dari respon menggunakan Qwen3-TTS
+    if data.voice_enabled and result.get("status") == "success":
+        try:
+            from voice_engine import generate_voice_bocchi
+            # Hapus JSON/tool call format dari respon jika ada
+            clean_text = re.sub(r'\{.*?\}', '', result["response"]).strip()
+            if clean_text:
+                audio_bytes = generate_voice_bocchi(clean_text, "Neutral")
+                if audio_bytes:
+                    audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+                    result["audio_base64"] = audio_b64
+        except Exception as e:
+            print(f"[WARNING] Gagal membuat suara respon chat: {e}")
+            
+    return result
+
+@app.post("/api/jarvis/transcribe")
+async def jarvis_transcribe(file: UploadFile = File(...)):
+    """Transkripsi audio dari client menggunakan Faster-Whisper."""
+    try:
+        audio_content = await file.read()
+        from voice_engine import transcribe_audio_bytes
+        text = transcribe_audio_bytes(audio_content)
+        return {"status": "ok", "text": text}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Transkripsi gagal: {str(e)}")
+
+class JarvisTTSRequest(BaseModel):
+    text: str
+    emotion: Optional[str] = "Neutral"
+
+@app.post("/api/jarvis/tts")
+async def jarvis_tts(data: JarvisTTSRequest):
+    """Generate audio dari teks menggunakan Qwen3-TTS."""
+    try:
+        from voice_engine import generate_voice_bocchi
+        audio_bytes = generate_voice_bocchi(data.text, data.emotion)
+        if not audio_bytes:
+            return {"status": "error", "message": "TTS model not loaded or error occurred"}
+        audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+        return {"status": "ok", "audio_base64": audio_b64}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"TTS gagal: {str(e)}")
+
+@app.post("/api/jarvis/clear")
+async def jarvis_clear_conversation():
+    """Clear conversation history (STM reset)."""
+    return jarvis.clear_conversation()
+
+@app.get("/api/jarvis/model-info")
+async def get_jarvis_active_model():
+    """Get info model aktif saat ini."""
+    return jarvis.get_active_model_info()
+
+class JarvisMemoryCreateRequest(BaseModel):
+    text: str
+    nama: Optional[str] = "Memori Obrolan"
+
+@app.get("/api/jarvis/memories")
+async def get_jarvis_memories(query: Optional[str] = None):
+    """Mendapatkan daftar memori jangka panjang (atau cari semantik jika ada query)."""
+    if query:
+        try:
+            results = memory.search_relevant_chunks(query, top_k=15)
+            return [{"nama": "Memori Obrolan", "chunk": res} for res in results]
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Gagal mencari memori: {str(e)}")
+    else:
+        try:
+            # Gunakan get_all_memories_with_ids agar chroma_id tersedia di UI
+            all_mems = memory.get_all_memories_with_ids()
+            return list(reversed(all_mems))  # newest first
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Gagal mengambil memori: {str(e)}")
+
+@app.post("/api/jarvis/memories")
+async def add_jarvis_memory(data: JarvisMemoryCreateRequest):
+    """Menambahkan memori jangka panjang secara manual."""
+    try:
+        emb = memory.create_query_embedding(data.text)
+        if not emb:
+            emb = []
+        memory.add_to_long_term_memory(data.nama, data.text, emb)
+        return {"status": "ok", "message": "Memori berhasil disimpan!"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gagal menyimpan memori: {str(e)}")
+
+@app.delete("/api/jarvis/memories/{index}")
+async def delete_jarvis_memory(index: int, chroma_id: Optional[str] = None):
+    """Menghapus memori jangka panjang berdasarkan chroma_id (atau index sebagai fallback)."""
+    try:
+        if chroma_id:
+            ok = memory.delete_memory_by_id(chroma_id)
+            if ok:
+                return {"status": "ok", "message": "Memori berhasil dihapus!"}
+            else:
+                raise HTTPException(status_code=404, detail="Memori dengan chroma_id tersebut tidak ditemukan")
+        else:
+            ok = memory.delete_memory_by_index(index)
+            if ok:
+                return {"status": "ok", "message": "Memori berhasil dihapus!"}
+            else:
+                raise HTTPException(status_code=400, detail="Index memori tidak valid")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gagal menghapus memori: {str(e)}")
+
+@app.delete("/api/jarvis/memories-clear")
+async def clear_all_jarvis_memories():
+    """Menghapus semua memori jangka panjang dari ChromaDB + JSON."""
+    try:
+        memory.clear_all_memories()
+        return {"status": "ok", "message": "Semua memori jangka panjang berhasil dikosongkan!"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gagal mengosongkan memori: {str(e)}")
+
+
+# ================================================================
+# DOCX GENERATOR ENDPOINTS
+# ================================================================
+
+import docx_generator as docx_gen
+import uuid as _uuid_mod
+from concurrent.futures import ThreadPoolExecutor
+
+_docx_executor = ThreadPoolExecutor(max_workers=2)
+
+
+class DocxSessionStartRequest(BaseModel):
+    session_id: Optional[str] = None
+
+
+class DocxAnswerRequest(BaseModel):
+    session_id: str
+    answer: str
+
+
+class DocxGenerateRequest(BaseModel):
+    session_id: str
+
+class DocxCustomSessionRequest(BaseModel):
+    session_id: Optional[str] = None
+    custom_data: dict
+
+@app.post("/api/docx/session/start")
+async def docx_session_start(data: DocxSessionStartRequest):
+    """Mulai sesi baru AI Penulis Akademik."""
+    try:
+        result = docx_gen.start_session(data.session_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gagal memulai sesi: {str(e)}")
+
+@app.post("/api/docx/session/custom")
+async def docx_session_custom(data: DocxCustomSessionRequest):
+    """Mulai sesi kustom dengan data lengkap (bypass Q&A)."""
+    try:
+        result = docx_gen.start_custom_session(data.custom_data, data.session_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gagal memulai sesi kustom: {str(e)}")
+
+@app.post("/api/docx/session/answer")
+async def docx_session_answer(data: DocxAnswerRequest):
+    """Kirim jawaban user ke Q&A flow AI Penulis."""
+    try:
+        result = docx_gen.answer_question(data.session_id, data.answer)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gagal proses jawaban: {str(e)}")
+
+
+@app.post("/api/docx/references/upload")
+async def docx_upload_reference(file: UploadFile = File(...)):
+    """Upload file referensi ke folder references/{type}/."""
+    try:
+        ext = os.path.splitext(file.filename or "")[-1].lower().strip(".")
+        ext_folder_map = {
+            "pdf": "pdf", "docx": "docx", "doc": "docx",
+            "txt": "txt", "md": "txt",
+            "png": "images", "jpg": "images", "jpeg": "images",
+        }
+        subfolder = ext_folder_map.get(ext, "txt")
+        dest_dir = os.path.join("references", subfolder)
+        os.makedirs(dest_dir, exist_ok=True)
+        safe_name = "".join(c for c in (file.filename or "file") if c.isalnum() or c in "._- ")
+        dest_path = os.path.join(dest_dir, safe_name)
+        content = await file.read()
+        with open(dest_path, "wb") as f:
+            f.write(content)
+        return {"status": "ok", "saved_to": dest_path.replace("\\", "/"), "filename": safe_name, "type": subfolder, "size": len(content)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gagal upload referensi: {str(e)}")
+
+
+@app.get("/api/docx/references/list")
+async def docx_list_references():
+    """List semua file referensi yang sudah diupload."""
+    try:
+        files = docx_gen.list_reference_files()
+        return {"files": files, "total": len(files)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gagal list referensi: {str(e)}")
+
+
+@app.delete("/api/docx/references/{filename}")
+async def docx_delete_reference(filename: str, file_type: Optional[str] = None):
+    """Hapus file referensi."""
+    try:
+        deleted = False
+        for subfolder in ["pdf", "docx", "txt", "images"]:
+            if file_type and subfolder != file_type:
+                continue
+            path = os.path.join("references", subfolder, filename)
+            if os.path.exists(path):
+                os.remove(path)
+                deleted = True
+                break
+        if deleted:
+            return {"status": "ok", "message": f"{filename} berhasil dihapus"}
+        raise HTTPException(status_code=404, detail="File referensi tidak ditemukan")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gagal hapus referensi: {str(e)}")
+
+
+@app.post("/api/docx/generate")
+async def docx_generate(data: DocxGenerateRequest):
+    """Trigger generate DOCX berdasarkan sesi yang sudah selesai Q&A."""
+    sess = docx_gen.get_session(data.session_id)
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session tidak ditemukan")
+    sess["status"] = "generating"
+    job_id = str(_uuid_mod.uuid4())
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(_docx_executor, docx_gen.assemble_docx, data.session_id, job_id)
+    return {"status": "generating", "job_id": job_id, "message": "Dokumen sedang dibuat"}
+
+
+@app.get("/api/docx/generate/status/{job_id}")
+async def docx_generate_status(job_id: str):
+    """Cek progress generate dokumen."""
+    return docx_gen.get_job_status(job_id)
+
+
+@app.get("/api/docx/download/{filename}")
+async def docx_download(filename: str):
+    """Download file DOCX hasil generate."""
+    safe_name = os.path.basename(filename)
+    filepath = os.path.join("output_docs", safe_name)
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="File tidak ditemukan")
+    return FileResponse(path=filepath, filename=safe_name, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+
+@app.get("/api/docx/list")
+async def docx_list():
+    """List semua file DOCX yang sudah di-generate."""
+    try:
+        docs = docx_gen.list_output_docs()
+        return {"docs": docs, "total": len(docs)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gagal list dokumen: {str(e)}")
+
+
+# ============================================================
+# MCP ENDPOINTS (CLIENT & SERVER)
+# ============================================================
+
+# --- MCP SERVER (BOCCHI AS SERVER) ---
+# Global sse_transport
+bocchi_sse = SseServerTransport("/mcp/messages") if SseServerTransport else None
+
+@app.get("/mcp")
+async def mcp_server_sse(request: FastAPIRequest):
+    """Endpoint untuk MCP Server via SSE."""
+    if not bocchi_sse or not bocchi_mcp_server:
+        raise HTTPException(status_code=501, detail="MCP tidak diinstal/didukung")
+    
+    async with bocchi_sse.connect_sse(request.scope, request.receive, request._send) as sse_conn:
+        await bocchi_mcp_server.run(sse_conn.transport, bocchi_mcp_server.create_initialization_options())
+
+@app.post("/mcp/messages")
+async def mcp_server_messages(request: FastAPIRequest):
+    """Endpoint untuk pesan JSON-RPC dari MCP Client."""
+    if not bocchi_sse:
+        raise HTTPException(status_code=501, detail="MCP tidak didukung")
+    await bocchi_sse.handle_post_message(request.scope, request.receive, request._send)
+
+# --- MCP CLIENT MANAGEMENT ---
+
+class AddMcpServerRequest(BaseModel):
+    name: str
+    transport: str  # "sse" atau "stdio"
+    url: Optional[str] = None
+    command: Optional[str] = None
+    args: Optional[List[str]] = None
+    env: Optional[dict] = None
+
+@app.get("/api/mcp/servers")
+async def get_mcp_servers():
+    if not mcp_registry:
+        return {"servers": {}, "status": "mcp_not_installed"}
+    return {"servers": mcp_registry.get_all_servers(), "status": "ok"}
+
+@app.post("/api/mcp/servers")
+async def add_mcp_server(data: AddMcpServerRequest):
+    if not mcp_registry:
+        raise HTTPException(status_code=501, detail="MCP tidak didukung")
+    config = {"transport": data.transport}
+    if data.transport == "sse":
+        config["url"] = data.url
+    else:
+        config["command"] = data.command
+        config["args"] = data.args or []
+        config["env"] = data.env
+    
+    mcp_registry.add_server(data.name, config)
+    return {"status": "ok", "message": f"Server {data.name} ditambahkan"}
+
+@app.delete("/api/mcp/servers/{name}")
+async def delete_mcp_server(name: str):
+    if not mcp_registry:
+        raise HTTPException(status_code=501, detail="MCP tidak didukung")
+    mcp_registry.remove_server(name)
+    return {"status": "ok"}
+
+@app.get("/api/mcp/servers/{name}/tools")
+async def get_mcp_server_tools(name: str):
+    if not mcp_registry:
+        raise HTTPException(status_code=501, detail="MCP tidak didukung")
+    try:
+        client = await mcp_registry.get_client(name)
+        tools = await client.list_tools()
+        return {"tools": tools}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class CallMcpToolRequest(BaseModel):
+    tool_name: str
+    arguments: dict
+
+@app.post("/api/mcp/servers/{name}/call")
+async def call_mcp_server_tool(name: str, req: CallMcpToolRequest):
+    if not mcp_registry:
+        raise HTTPException(status_code=501, detail="MCP tidak didukung")
+    try:
+        client = await mcp_registry.get_client(name)
+        result = await client.call_tool(req.tool_name, req.arguments)
+        return {"result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
