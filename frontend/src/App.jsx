@@ -316,7 +316,7 @@ function App() {
     }
   };
 
-  const [selectedMode, setSelectedMode] = useState('sandbox')
+  const [selectedMode, setSelectedMode] = useState('override')
   const [storyData, setStoryData] = useState(null)
 
   if (screen === 'menu') {

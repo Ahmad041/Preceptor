@@ -3,7 +3,7 @@ import { useState } from 'react';
 export default function MainMenu({ onStart }) {
   const [showModes, setShowModes] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [selectedMode, setSelectedMode] = useState('sandbox');
+  const [selectedMode, setSelectedMode] = useState('override');
   const [nama, setNama] = useState('');
   const [hubungan, setHubungan] = useState('');
 
@@ -167,16 +167,16 @@ export default function MainMenu({ onStart }) {
 
             {[
               { id: 'story', title: 'Story Mode', desc: 'Ubah PDF/Paper menjadi Visual Novel Interaktif', icon: '🎬', status: 'Aktif' },
-              { id: 'sandbox', title: 'Sandbox Mode', desc: 'Mode bebas, chatting, dan kontrol sistem laptop', icon: '🛠️', status: 'Aktif' },
+              { id: 'override', title: 'Override Mode', desc: 'Mode kontrol desktop, vision, dan chatting bebas', icon: '🛠️', status: 'Aktif' },
               { id: 'company', title: 'Company Mode', desc: 'Obsidian-like Note System with 3D AI Knowledge Graph', icon: '🧠', status: 'Aktif' }
             ].map(mode => (
               <button
                 key={mode.id}
                 onClick={() => {
-                  if (mode.id === 'sandbox' || mode.id === 'story' || mode.id === 'company') {
+                  if (mode.id === 'override' || mode.id === 'story' || mode.id === 'company') {
                     setSelectedMode(mode.id);
                     setShowModes(false);
-                    setShowForm(mode.id === 'sandbox' || mode.id === 'company');
+                    setShowForm(mode.id === 'override' || mode.id === 'company');
                     if (mode.id === 'story') {
                       onStart({ nama: '', hubungan: '' }, 'story');
                     }
