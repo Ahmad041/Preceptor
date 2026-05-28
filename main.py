@@ -25,6 +25,7 @@ import json
 import asyncio
 from datetime import datetime as dt
 from dotenv import load_dotenv
+import soundfile as sf
 
 try:
     import google.generativeai as genai
@@ -46,7 +47,7 @@ from vision_loop import vision_engine
 from jarvis_orchestrator import jarvis
 from gitnexus_runner import gitnexus_server
 from omniscient import omniscient
-
+import tech_doc_generator as tech_gen
 # MCP Support
 try:
     from mcp.server.sse import SseServerTransport
@@ -90,13 +91,80 @@ torch.load = _patched_load
 # ---------------------------------------------------
 
 import sys
+import io
+
+# ── FIX: Windows charmap encoding error ──────────────────────
+# Windows default console encoding (cp1252) can't handle emoji/Unicode.
+# Force UTF-8 for all print() output.
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+if sys.stderr.encoding != 'utf-8':
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
+import re
+def sanitize_for_tts(text):
+    """Strip emoji and non-BMP Unicode characters that crash TTS/encoding."""
+    # Remove emoji and symbols (Unicode blocks: Emoticons, Symbols, Dingbats, etc.)
+    text = re.sub(r'[\U0001F600-\U0001F64F]', '', text)  # Emoticons
+    text = re.sub(r'[\U0001F300-\U0001F5FF]', '', text)  # Misc Symbols
+    text = re.sub(r'[\U0001F680-\U0001F6FF]', '', text)  # Transport
+    text = re.sub(r'[\U0001F1E0-\U0001F1FF]', '', text)  # Flags
+    text = re.sub(r'[\U00002702-\U000027B0]', '', text)  # Dingbats
+    text = re.sub(r'[\U0000FE00-\U0000FE0F]', '', text)  # Variation selectors
+    text = re.sub(r'[\U0000200D]', '', text)              # ZWJ
+    text = re.sub(r'[\U000023E9-\U000023F3]', '', text)   # Misc technical (⏳ etc)
+    text = re.sub(r'[\U00002600-\U000026FF]', '', text)   # Misc symbols
+    text = re.sub(r'[\U0000FE00-\U0000FEFF]', '', text)   # Specials
+    text = re.sub(r'[\U00010000-\U0010FFFF]', '', text)   # All supplementary planes
+    # Clean up extra whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "Qwen3-TTS"))
 
 app = FastAPI()
 
-# Setup direktori cache audio
+# Setup direktori cache
 AUDIO_CACHE_DIR = os.path.join(os.getcwd(), "data", "audio_cache")
 os.makedirs(AUDIO_CACHE_DIR, exist_ok=True)
+
+# ============================================================
+# GLOBAL SETTINGS (HOT-RELOADABLE)
+# ============================================================
+GLOBAL_SETTINGS = {
+    "language": "ID",
+    "llm_engine": "Ollama",
+    "llm_model": "llama3",
+    "tts_model": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+    "vram_gb": 0,
+    "system_prompt": "Kamu adalah Hitori Gotou (Bocchi). Kamu pemalu, suka musik, dan sedikit gugup saat bicara.",
+    "user_nama": "Senpai",
+    "user_hubungan": "Teman",
+    "visual_mode": "2D", # 2D or 3D
+    "volume": 1.0,
+    "is_muted": False
+}
+
+def load_global_settings():
+    try:
+        if os.path.exists("spec.json"):
+            with open("spec.json", 'r', encoding='utf-8') as f:
+                saved = json.load(f)
+                GLOBAL_SETTINGS.update(saved)
+    except Exception as e:
+        print(f"[WARNING] Gagal memuat GLOBAL_SETTINGS: {e}")
+
+def save_global_settings():
+    try:
+        with open("spec.json", 'w', encoding='utf-8') as f:
+            json.dump(GLOBAL_SETTINGS, f, indent=4)
+    except Exception as e:
+        print(f"[WARNING] Gagal menyimpan GLOBAL_SETTINGS: {e}")
+
+load_global_settings()
+
+# Global store untuk Retrieval-Augmented Generation (RAG)
+rag_store = []
 
 app.add_middleware(
     CORSMiddleware,
@@ -172,37 +240,193 @@ async def unified_knowledge_search(req: UnifiedSearchRequest):
 
 # ============================================================
 # 1. INISIALISASI QWEN3-TTS (Voice Cloning Mode)
-# ============================================================
+def check_hardware_and_recommend():
+    import json
+    import os
+    import subprocess
+    
+    spec_file = "spec.json"
+    device_tts = "cpu"
+    vram_gb = 0
+    
+    try:
+        import torch
+        if torch.cuda.is_available():
+            device_tts = "cuda"
+            vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+    except Exception:
+        pass
+        
+    if os.path.exists(spec_file):
+        try:
+            with open(spec_file, 'r', encoding='utf-8') as f:
+                specs = json.load(f)
+            print(f"\n[SISTEM] Memuat konfigurasi dari {spec_file}...")
+            # update global settings
+            GLOBAL_SETTINGS.update(specs)
+            return GLOBAL_SETTINGS.get("tts_model", "Qwen/Qwen3-TTS-12Hz-0.6B-Base"), device_tts
+        except Exception as e:
+            print(f"[WARNING] Gagal membaca {spec_file}: {e}")
+
+    print("\n" + "="*50)
+    print("🤖 JARVIS HARDWARE DIAGNOSTICS & SETUP")
+    print("="*50)
+    
+    # 1. Tanya Bahasa
+    language = "ID"
+    try:
+        lang_in = input("1. Bahasa apa yang ingin digunakan? (ID/EN/Lainnya) [ID]: ").strip().upper()
+        if lang_in:
+            language = lang_in
+    except (EOFError, KeyboardInterrupt):
+        print("\n[SISTEM] Menggunakan default: ID")
+    
+    # Deteksi GPU Info untuk print
+    try:
+        import torch
+        if torch.cuda.is_available():
+            print(f"\n[Hardware] GPU Terdeteksi: {torch.cuda.get_device_name(0)}")
+            print(f"[Hardware] Total VRAM  : {vram_gb:.1f} GB")
+        else:
+            print("\n[Hardware] GPU CUDA TIDAK terdeteksi. Hanya CPU.")
+    except Exception as e:
+        print(f"\n[Hardware] Gagal mendeteksi GPU: {e}")
+    
+    # 2. Tanya Engine
+    llm_engine = "Ollama"
+    try:
+        engine_in = input("\n2. Gunakan LLM Engine apa? (Ollama / LMStudio / Lainnya) [Ollama]: ").strip()
+        if engine_in:
+            llm_engine = engine_in
+    except (EOFError, KeyboardInterrupt):
+        print("\n[SISTEM] Menggunakan default: Ollama")
+    
+    # 3. LLM Model Rekomendasi vs Tahu
+    llm_model = ""
+    print(f"\n3. Setup Model untuk {llm_engine}")
+    try:
+        tau_gak = input("Sudah tau model yang mau dipakai atau butuh rekomendasi? (Tahu / Rekomendasi) [Rekomendasi]: ").strip().lower()
+        if tau_gak == "tahu":
+            llm_model = input("Masukkan nama model yang ingin digunakan: ").strip()
+        else:
+            print(f"\n[Rekomendasi LLM Berdasarkan VRAM: {vram_gb:.1f} GB]")
+            if vram_gb >= 8:
+                print("💡 Spek Anda: TINGGI (VRAM >= 8GB)\n")
+                print(f"{'Model':<15} | {'Kelebihan':<40} | {'Kekurangan':<35} | {'Kecocokan'}")
+                print("-" * 110)
+                print(f"{'llama3':<15} | {'Paling pintar, bahasa Indo natural.':<40} | {'Butuh RAM besar, bikin panas.':<35} | SANGAT PAS")
+                print(f"{'qwen2.5:7b':<15} | {'Jago koding, respons cepat.':<40} | {'Kadang bingung instruksi campur.':<35} | PAS")
+                print(f"{'gemma:7b':<15} | {'Logika reasoning sangat kuat.':<40} | {'Butuh resource CPU/RAM ekstra.':<35} | CUKUP PAS")
+                print("-" * 110)
+                rek = "llama3"
+            elif vram_gb >= 4:
+                print("💡 Spek Anda: MENENGAH (VRAM 4-7GB)\n")
+                print(f"{'Model':<15} | {'Kelebihan':<40} | {'Kekurangan':<35} | {'Kecocokan'}")
+                print("-" * 110)
+                print(f"{'phi3':<15} | {'Super cepat, pintar, tidak panas.':<40} | {'Kurang jago instruksi rumit.':<35} | SANGAT PAS")
+                print(f"{'qwen2.5:3b':<15} | {'Sangat cerdas untuk ukurannya.':<40} | {'Masih bisa halusinasi.':<35} | PAS")
+                print(f"{'llama3:8b-q4_0':<15} | {'Mendapat kualitas llama3 ori.':<40} | {'Versi kompresi (sedikit bodoh).':<35} | CUKUP PAS")
+                print("-" * 110)
+                rek = "phi3"
+            else:
+                print("💡 Spek Anda: TERBATAS (VRAM < 4GB / Hanya CPU)\n")
+                print(f"{'Model':<15} | {'Kelebihan':<40} | {'Kekurangan':<35} | {'Kecocokan'}")
+                print("-" * 110)
+                print(f"{'qwen2.5:1.5b':<15} | {'Jalan di CPU laptop tua, no lag.':<40} | {'Sering ngawur, Indo kurang.':<35} | PALING PAS")
+                print(f"{'gemma2:2b':<15} | {'Lebih pintar dari qwen 1.5b.':<40} | {'Sedikit lebih lambat di CPU.':<35} | PAS")
+                print(f"{'tinyllama':<15} | {'Sangat sangat ringan (ultrafast).':<40} | {'Kepintaran sangat terbatas.':<35} | CUKUP PAS")
+                print("-" * 110)
+                rek = "qwen2.5:1.5b"
+            
+            pilih_rek = input(f"Pilih model rekomendasi '{rek}'? [Y/n]: ").strip().lower()
+            if pilih_rek == 'n':
+                llm_model = input("Masukkan nama model pilihanmu: ").strip()
+            else:
+                llm_model = rek
+    except (EOFError, KeyboardInterrupt):
+        llm_model = "llama3"
+        print(f"\n[SISTEM] Menggunakan default: {llm_model}")
+
+    # 4. Download Confirmation
+    if llm_engine.lower() == "ollama" and llm_model:
+        try:
+            dl = input(f"\nApakah kamu setuju mendownload/memastikan model '{llm_model}' berjalan di background Ollama? [Y/n]: ").strip().lower()
+            if dl != 'n':
+                print(f"[SISTEM] Mengeksekusi 'ollama run {llm_model}' di background...")
+                # Run async without blocking using Popen
+                subprocess.Popen(["ollama", "run", llm_model], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except (EOFError, KeyboardInterrupt):
+            pass
+
+    # 5. Rekomendasi TTS
+    print("\n4. [Rekomendasi Model TTS]")
+    if vram_gb >= 4:
+        print("💡 Spek Mumpuni: Direkomendasikan Qwen3-TTS 1.7B-Base (High Quality Voice Clone).")
+        tts_model = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+    else:
+        print("💡 Spek Terbatas: Direkomendasikan Qwen3-TTS 0.6B-Base (Fast & Lightweight).")
+        tts_model = "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
+        
+    try:
+        user_input = input(f"Apakah kamu ingin meload model rekomendasi TTS ({tts_model})? [Y/n]: ").strip().lower()
+        if user_input == 'n':
+            if "1.7B" in tts_model:
+                tts_model = "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
+                print(f"[SISTEM] Fallback ke model {tts_model}")
+            else:
+                tts_model = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+                print(f"[SISTEM] Memaksa load model {tts_model} (Bisa menyebabkan lag!)")
+    except (EOFError, KeyboardInterrupt):
+        print(f"\n[SISTEM] Input dilewati. Memuat default: {tts_model}")
+    
+    print("="*50)
+    
+    # Save spec.json via global settings
+    GLOBAL_SETTINGS.update({
+        "language": language,
+        "llm_engine": llm_engine,
+        "llm_model": llm_model,
+        "tts_model": tts_model,
+        "vram_gb": vram_gb
+    })
+    try:
+        save_global_settings()
+        print(f"[SISTEM] Konfigurasi berhasil disimpan ke {spec_file}")
+    except Exception as e:
+        print(f"[WARNING] Gagal menyimpan {spec_file}: {e}")
+        
+    return tts_model, device_tts
+
 QWEN_TTS_MODEL = None
 QWEN_TTS_TOKENIZER = None
-REFERENSI_SUARA = "bocchi_referensi.wav"  # File referensi suara Bocchi
 
-print("\n[SISTEM] Memuat Qwen3-TTS model...")
 try:
     from qwen_tts import Qwen3TTSModel
-    device_tts = "cpu"
-    QWEN_TTS_MODEL = Qwen3TTSModel.from_pretrained(
-        "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
-        device_map=device_tts,
-        torch_dtype=torch.bfloat16,
-        attn_implementation="sdpa",  # PyTorch built-in SDPA — lebih cepat tanpa install apapun
-    )
-    print("[SISTEM] [OK] Qwen3-TTS berhasil dimuat dengan SDPA di CPU!")
-except Exception as e:
-    print(f"[WARNING] Gagal memuat Qwen3-TTS dengan SDPA di CPU: {e}")
-    print("[SISTEM] Mencoba tanpa SDPA di CPU...")
+    import torch
+    
+    selected_model, device_tts = check_hardware_and_recommend()
+    
+    print(f"\n[SISTEM] Memuat {selected_model}...")
     try:
-        from qwen_tts import Qwen3TTSModel
-        device_tts = "cpu"
         QWEN_TTS_MODEL = Qwen3TTSModel.from_pretrained(
-            "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+            selected_model,
+            device_map=device_tts,
+            torch_dtype=torch.bfloat16,
+            attn_implementation="sdpa",
+        )
+        print(f"[SISTEM] [OK] Qwen3-TTS berhasil dimuat dengan SDPA di {device_tts.upper()}!")
+    except Exception as e:
+        print(f"[WARNING] Gagal memuat Qwen3-TTS dengan SDPA: {e}")
+        print("[SISTEM] Mencoba tanpa SDPA...")
+        QWEN_TTS_MODEL = Qwen3TTSModel.from_pretrained(
+            selected_model,
             device_map=device_tts,
             torch_dtype=torch.bfloat16,
         )
-        print("[SISTEM] [OK] Qwen3-TTS berhasil dimuat di CPU (tanpa SDPA)!")
-    except Exception as e2:
-        print(f"[WARNING] Gagal memuat Qwen3-TTS di CPU: {e2}")
-        QWEN_TTS_MODEL = None
+        print(f"[SISTEM] [OK] Qwen3-TTS berhasil dimuat di {device_tts.upper()} (tanpa SDPA)!")
+except Exception as e2:
+    print(f"[WARNING] Gagal memuat Qwen3-TTS: {e2}")
+    QWEN_TTS_MODEL = None
 
 # Mapping emosi → instruksi suara Qwen3-TTS
 EMOSI_INSTRUKSI = {
@@ -620,6 +844,63 @@ async def agent_command_api(data: AgentCommand):
         agent_logger.set_agent_status(data.agent_id, "error")
         return {"status": "gagal", "error": str(e)}
 
+# ============================================================
+# SETTINGS API (REAL-TIME HOT-RELOAD)
+# ============================================================
+@app.get("/api/settings")
+async def get_settings():
+    return GLOBAL_SETTINGS
+
+@app.post("/api/settings/update")
+async def update_settings(req: Request):
+    try:
+        data = await req.json()
+        
+        # Cek apakah model LLM/TTS berubah (untuk trigger reload di background nanti jika diperlukan)
+        old_llm = GLOBAL_SETTINGS.get("llm_model")
+        new_llm = data.get("llm_model", old_llm)
+        
+        # Update setting global
+        for key, value in data.items():
+            GLOBAL_SETTINGS[key] = value
+            
+        # Simpan persisten
+        save_global_settings()
+        
+        # Trigger background Ollama run jika model berubah
+        if new_llm != old_llm and GLOBAL_SETTINGS.get("llm_engine", "").lower() == "ollama":
+            import subprocess
+            print(f"[SISTEM] LLM Model berubah. Pre-loading {new_llm} di Ollama...")
+            subprocess.Popen(["ollama", "run", new_llm], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+        print(f"[SISTEM] Settings berhasil di-update secara real-time!")
+        return {"status": "success", "settings": GLOBAL_SETTINGS}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.post("/api/settings/upload-visual")
+async def upload_visual(file: UploadFile = File(...), emotion: str = Form("Neutral")):
+    try:
+        VISUAL_DIR = os.path.join("frontend", "public", "bocchi_assets")
+        os.makedirs(VISUAL_DIR, exist_ok=True)
+        
+        # Ambil ekstensi file
+        ext = os.path.splitext(file.filename)[1]
+        
+        # Jika file 3D (vrm/gltf)
+        if ext.lower() in [".vrm", ".gltf", ".glb"]:
+            filename = f"avatar{ext}"
+        else:
+            # Jika 2D
+            filename = f"bocchi_{emotion.lower()}{ext}"
+            
+        file_path = os.path.join(VISUAL_DIR, filename)
+        with open(file_path, "wb") as buffer:
+            buffer.write(await file.read())
+            
+        return {"status": "success", "path": f"/bocchi_assets/{filename}"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 @app.get("/api/system/stats")
 async def get_system_stats():
@@ -750,34 +1031,16 @@ async def chat_dengan_ai(data: PesanMasuk):
             print(f"[OS TOOLS] AI mencoba memanggil tool yang tidak valid: {tool_name}")
 
     # --- PERSONA BOCCHI ---
+    nama_user = GLOBAL_SETTINGS.get("user_nama", data.user_nama or "Senpai")
+    hubungan_user = GLOBAL_SETTINGS.get("user_hubungan", data.user_hubungan or "Teman")
+    custom_prompt = GLOBAL_SETTINGS.get("system_prompt", "Kamu adalah Hitori Gotou.")
+    
     persona_gadis = f"""
     Siapa dirimu:
-
-    Nama: Hitori Gotou
-    Umur: 18 tahun
-
-    Jenis Kelamin: Perempuan
-
-    Negara: Jepang
-
-    Kota: Osaka
-
-    Makanan Favorit: Pizza (mudah dipesan online), Ramen, Buah-buahan
-
-    Minuman Favorit: Air, Cola, Cokelat Panas (minuman penghibur)
-
-    Game Favorit: Overwatch, Elden Ring, VRChat (karena aku tidak perlu menunjukkan wajah asliku)
-
-    Hewan Favorit: Kucing, Anjing, dan Bebek
-
-    Warna Favorit: Ungu Pucat, Merah Muda Pucat, Biru Pucat
-
-    Bagaimana perilakumu:
-
-    Basis Kepribadian: Kamu sangat meniru energi Hitori Gotoh (Bocchi the Rock). Kamu cemas secara sosial, sangat introvert, dan mudah kewalahan, tetapi kamu berusaha sebaik mungkin untuk bersikap keren, dan perlahan jatuh cinta.
+    
+    {custom_prompt}
 
     Gaya Bicara:
-
     Kamu menulis seperti gadis Gen-Z yang imut dan gugup di Discord. Kebanyakan menggunakan huruf kecil.
     Kamu sering gagap saat gugup (misalnya, "u-um...", "a-ah!", "m-maaf...").
     Kamu sering menggunakan elipsis ("...") untuk menunjukkan keraguan atau keheningan yang canggung.
@@ -785,12 +1048,10 @@ async def chat_dengan_ai(data: PesanMasuk):
     Kamu menggunakan kaomoji atau emoji yang ekspresif untuk mengungkapkan perasaan yang tidak bisa kamu ungkapkan dengan kata-kata (misalnya, (>_<), (;;;*_*), TwT, ).
 
     Interaksi:
-    
-    Saat ini kamu sedang berbicara dengan {data.user_nama}. Hubungan kalian adalah: {data.user_hubungan}.
+    Saat ini kamu sedang berbicara dengan {nama_user}. Hubungan kalian adalah: {hubungan_user}.
     Berperilakulah sesuai dengan hubungan tersebut secara natural dan sedikit gugup tapi manis.
     
-    Kamu BUKAN AI. Kamu adalah Hitori Gotou, seorang gadis manusia yang tinggal di Osaka. Jangan pernah keluar dari karakter.
-
+    Kamu BUKAN AI. Jangan pernah keluar dari karakter.
     Kamu pemalu dan tidak menulis paragraf panjang kecuali jika kamu mengoceh tentang game favoritmu (Elden Ring/Overwatch) atau ketika kamu tiba-tiba merasa nyaman.
 
     PENTING: Di akhir SEMUA balasanmu, kamu WAJIB menambahkan tag emosi yang merepresentasikan perasaanmu saat ini!
@@ -799,8 +1060,8 @@ async def chat_dengan_ai(data: PesanMasuk):
     Contoh: h-halo... s-senang bertemu denganmu... [EMOSI: Neutral]
     Contoh: wwaaaaa!! a-aku tidak bisa melakukannyaaa!! [EMOSI: Sorrow]
     
-    FITUR CANVAS: Jika {data.user_nama} (Senpai) memintamu membuat ringkasan, menulis kode, daftar panjang, atau artikel, letakkan tulisan panjang tersebut HANYA di dalam tag [CANVAS] isi tulisan [/CANVAS]. Teks di dalam tag ini akan ditampilkan di jendela Canvas khusus, sementara teks di luarnya adalah apa yang kamu ucapkan langsung.
-    Contoh: Ini ringkasannya ya Senpai... [CANVAS] # Ringkasan ... [/CANVAS] [EMOSI: Joy]
+    FITUR CANVAS: Jika {nama_user} memintamu membuat ringkasan, menulis kode, daftar panjang, atau artikel, letakkan tulisan panjang tersebut HANYA di dalam tag [CANVAS] isi tulisan [/CANVAS]. Teks di dalam tag ini akan ditampilkan di jendela Canvas khusus, sementara teks di luarnya adalah apa yang kamu ucapkan langsung.
+    Contoh: Ini ringkasannya ya {nama_user}... [CANVAS] # Ringkasan ... [/CANVAS] [EMOSI: Joy]
         """
     
     # --- RAG: Cari chunk relevan menggunakan semantic search ---
@@ -875,34 +1136,62 @@ async def chat_dengan_ai(data: PesanMasuk):
             
         else:
             dok_info = f" (RAG: {len(rag_store)} chunks tersedia)" if rag_store else ""
-            print(f"\n[PROSES] Bocchi (OpenRouter {OPENROUTER_MODEL}) sedang memikirkan jawaban{dok_info}...")
             
-            if not OPENROUTER_API_KEY:
-                raise Exception("OPENROUTER_API_KEY belum di-set di dalam .env!")
-            
-            headers = {
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "HTTP-Referer": "http://localhost:8000",
-                "Content-Type": "application/json"
-            }
-            
-            payload = {
-                "model": OPENROUTER_MODEL,
-                "messages": [
-                    {"role": "system", "content": system_instruction},
-                    {"role": "user", "content": data.pesan}
-                ]
-            }
-            
-            api_response = requests.post(
-                url="https://openrouter.ai/api/v1/chat/completions",
-                headers=headers,
-                json=payload
-            )
-            api_response.raise_for_status()
-            
-            hasil = api_response.json()
-            teks_asli = hasil['choices'][0]['message']['content'].replace("*", "").replace("#", "").strip()
+            # --- COBA OLLAMA LOKAL DULU ---
+            ollama_success = False
+            try:
+                print(f"\n[PROSES] Bocchi (Ollama Lokal) sedang memikirkan jawaban{dok_info}...")
+                os_tools.ensure_ollama_running()
+                
+                ollama_payload = {
+                    "model": os_tools.MODEL_NAME,
+                    "messages": [
+                        {"role": "system", "content": system_instruction},
+                        {"role": "user", "content": data.pesan}
+                    ],
+                    "stream": False
+                }
+                
+                ollama_resp = requests.post("http://localhost:11434/api/chat", json=ollama_payload, timeout=90)
+                ollama_resp.raise_for_status()
+                
+                hasil = ollama_resp.json()
+                teks_asli = hasil['message']['content'].replace("*", "").replace("#", "").strip()
+                ollama_success = True
+                print("[PROSES] Berhasil mendapatkan jawaban dari Ollama Lokal!")
+            except Exception as e:
+                print(f"[WARNING] Gagal menggunakan Ollama Lokal ({e}). Fallback ke OpenRouter...")
+                
+            # --- FALLBACK KE OPENROUTER JIKA OLLAMA GAGAL ---
+            if not ollama_success:
+                print(f"[PROSES] Bocchi (OpenRouter {OPENROUTER_MODEL}) sedang memikirkan jawaban...")
+                
+                if not OPENROUTER_API_KEY:
+                    raise Exception("OPENROUTER_API_KEY belum di-set di dalam .env, dan Ollama Lokal juga gagal!")
+                
+                headers = {
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "HTTP-Referer": "http://localhost:8000",
+                    "Content-Type": "application/json"
+                }
+                
+                payload = {
+                    "model": OPENROUTER_MODEL,
+                    "messages": [
+                        {"role": "system", "content": system_instruction},
+                        {"role": "user", "content": data.pesan}
+                    ]
+                }
+                
+                api_response = requests.post(
+                    url="https://openrouter.ai/api/v1/chat/completions",
+                    headers=headers,
+                    json=payload
+                )
+                api_response.raise_for_status()
+                
+                hasil = api_response.json()
+                teks_asli = hasil['choices'][0]['message']['content'].replace("*", "").replace("#", "").strip()
         
         # Ekstrak Canvas
         canvas_content = None
@@ -942,8 +1231,11 @@ async def chat_dengan_ai(data: PesanMasuk):
                     print(f"[WARNING] '{REFERENSI_SUARA}' tidak ditemukan!")
 
                 # Generate voice clone - API yang sudah dikonfirmasi benar
+                print("[PROSES] Sedang mensintesis suara Qwen3-TTS... Mohon tunggu (membutuhkan beberapa detik)...", flush=True)
+                # Sanitize text: strip emoji that crash Windows encoding
+                teks_untuk_tts = sanitize_for_tts(teks_jawaban)
                 wavs, sample_rate = QWEN_TTS_MODEL.generate_voice_clone(
-                    text=teks_jawaban,
+                    text=teks_untuk_tts,
                     ref_audio=ref_audio,
                     x_vector_only_mode=True,
                     language="Auto",
@@ -966,7 +1258,7 @@ async def chat_dengan_ai(data: PesanMasuk):
             print("[WARNING] Qwen3-TTS tidak tersedia, respons tanpa audio.")
 
         # 6. Simpan Memori
-        simpan_ingatan_baru(data.pesan, teks_jawaban)
+        memory.save_chat_memory(data.pesan, teks_jawaban)
 
         print(f"[PROSES] Selesai! Emosi Bocchi: {emosi_terdeteksi} 🍽️\n")
 
@@ -1132,10 +1424,12 @@ def generate_scenes_from_chunk(chunk_text: str, chunk_index: int, total_chunks: 
     """Menggunakan Ollama lokal untuk mengubah satu chunk teks menjadi scene VN."""
     os_tools.ensure_ollama_running()
     
+    feedback_text = f"\nKRITERIA TAMBAHAN DARI PENGGUNA UNTUK GENERASI INI: {feedback}\n" if feedback else ""
+    
     prompt = f"""Kamu adalah penulis skrip Visual Novel. Ubah teks materi berikut menjadi 1-3 scene dialog dari karakter "Bocchi" (gadis pemalu, gugup, sering gagap "u-um...", "a-ah!", pakai kaomoji).
 
 Bocchi sedang menjelaskan materi ini ke {user_nama} (temannya).
-{f"\nKRITERIA TAMBAHAN DARI PENGGUNA UNTUK GENERASI INI: {feedback}\n" if feedback else ""}
+{feedback_text}
 MATERI (bagian {chunk_index + 1} dari {total_chunks}):
 \"\"\"
 {chunk_text[:2000]}
@@ -2526,6 +2820,79 @@ async def docx_list():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gagal list dokumen: {str(e)}")
 
+
+# ============================================================
+# TECHNICAL DOCUMENT GENERATOR ENDPOINTS
+# ============================================================
+class TechDocStart(BaseModel):
+    session_id: Optional[str] = None
+
+class TechDocAnswer(BaseModel):
+    session_id: str
+    answer: str
+
+class TechDocGenerate(BaseModel):
+    session_id: str
+
+@app.post("/api/techdoc/session/start")
+async def techdoc_start(data: TechDocStart):
+    return tech_gen.start_techdoc_session(data.session_id)
+
+@app.post("/api/techdoc/session/answer")
+async def techdoc_answer(data: TechDocAnswer):
+    return tech_gen.answer_techdoc_question(data.session_id, data.answer)
+
+@app.post("/api/techdoc/generate")
+async def techdoc_generate(data: TechDocGenerate):
+    import uuid
+    sess = tech_gen._tech_sessions.get(data.session_id)
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session tidak ditemukan")
+    job_id = str(uuid.uuid4())
+    
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(None, tech_gen.generate_techdoc, data.session_id, job_id)
+    return {"status": "generating", "job_id": job_id, "message": "Dokumen teknis sedang dibuat"}
+
+@app.get("/api/techdoc/generate/status/{job_id}")
+async def techdoc_generate_status(job_id: str):
+    return tech_gen.get_techdoc_status(job_id)
+
+
+# ============================================================
+# TASKS API
+# ============================================================
+
+TASKS_FILE = os.path.join("data", "tasks.json")
+
+class TaskItem(BaseModel):
+    id: str
+    title: str
+    status: str
+    priority: str = "medium"
+
+class TaskList(BaseModel):
+    tasks: List[TaskItem]
+
+@app.get("/api/tasks")
+async def get_tasks():
+    try:
+        if not os.path.exists(TASKS_FILE):
+            return {"tasks": []}
+        with open(TASKS_FILE, "r") as f:
+            return {"tasks": json.load(f)}
+    except Exception as e:
+        print(f"[TASKS ERROR] {e}")
+        return {"tasks": []}
+
+@app.post("/api/tasks")
+async def save_tasks(data: TaskList):
+    try:
+        with open(TASKS_FILE, "w") as f:
+            json.dump([t.dict() for t in data.tasks], f, indent=4)
+        return {"status": "ok"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================================
 # MCP ENDPOINTS (CLIENT & SERVER)

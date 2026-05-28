@@ -1,0 +1,134 @@
+.projects-view-container {
+    padding: 24px;
+    height: 100%;
+    color: var(--text-primary);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+}
+
+.finance-overview {
+    display: flex;
+    gap: 24px;
+}
+
+.finance-card {
+    flex: 1;
+    background: #1a1a2e;
+    padding: 24px;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #333;
+}
+
+.finance-card.primary {
+    border-color: #ff0055;
+    background: linear-gradient(145deg, #2a0a1a, #1a1a2e);
+}
+
+.finance-card h3 {
+    margin: 0;
+    font-size: 1rem;
+    color: #aaa;
+    letter-spacing: 1px;
+}
+
+.kp-value {
+    font-size: 3rem;
+    font-weight: 800;
+    color: #ff0055;
+    margin: 12px 0;
+    text-shadow: 0 0 10px rgba(255,0,85,0.3);
+}
+
+.finance-card.primary .kp-value {
+    color: #00ff88;
+    text-shadow: 0 0 10px rgba(0,255,136,0.3);
+}
+
+.subtitle {
+    margin: 0;
+    font-size: 0.8rem;
+    color: #666;
+}
+
+.projects-list-section h2 {
+    font-size: 1.2rem;
+    margin-bottom: 16px;
+    color: var(--accent-color, #ff0055);
+    border-bottom: 1px solid #333;
+    padding-bottom: 8px;
+}
+
+.projects-table-container {
+    background: #1a1a2e;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #333;
+}
+
+.projects-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.projects-table th, .projects-table td {
+    padding: 16px;
+    text-align: left;
+    border-bottom: 1px solid #2a2a40;
+}
+
+.projects-table th {
+    background: #2a2a40;
+    color: #888;
+    font-size: 0.9rem;
+    font-weight: 600;
+    letter-spacing: 1px;
+}
+
+.projects-table tbody tr:hover {
+    background: #222238;
+}
+
+.proj-name {
+    font-weight: bold;
+    color: #fff;
+}
+
+.proj-tokens {
+    color: #00ff88;
+    font-family: monospace;
+}
+
+.status-badge {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: bold;
+}
+
+.status-badge.active {
+    background: rgba(0, 255, 136, 0.2);
+    color: #00ff88;
+}
+
+.empty-row {
+    text-align: center !important;
+    color: #888;
+    font-style: italic;
+    padding: 32px !important;
+}
+
+.projects-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    font-family: monospace;
+    font-size: 1.2rem;
+    color: var(--accent-color, #ff0055);
+}

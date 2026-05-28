@@ -3,8 +3,6 @@ import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin } from '@pixiv/three-vrm';
 import * as THREE from 'three';
-import { sampleClip, blendClips } from './utils/curveSampler';
-import ANIMATION_CURVES from './data/animation_curves.json';
 
 // ============================================================
 // KONFIGURASI POSE UNTUK SETIAP EMOSI
@@ -67,36 +65,9 @@ const POSE_CONFIG = {
 };
 
 // ============================================================
-// MAPPING EMOSI → UNITY ANIMATION CLIP
+// ANIMASI KHUSUS UNTUK SETIAP EMOSI
 // ============================================================
-const EMOTION_TO_CLIP = {
-  idle:   'FACE_IDLE_1',
-  gugup:  'FACE_DRAG',
-  takut:  'FACE_HAIR_STROKE',
-  marah:  'FACE_INTIME',
-  senang: 'PET_HAPPY',
-  panik:  'FACE_DRAG',  // Panik mirip gugup
-};
-
-// Mapping Unity attribute names → VRM expression names
-const UNITY_TO_VRM = {
-  Blink:   'blink',
-  Blink_L: 'blinkLeft',
-  Blink_R: 'blinkRight',
-  A:       'aa',
-  I:       'ih',
-  U:       'ou',
-  E:       'ee',
-  O:       'oh',
-  Joy:     'happy',
-  Angry:   'angry',
-  Sorrow:  'sad',
-  Fun:     'happy',
-  Neutral: 'neutral',
-};
-
-// Body animation per emosi (tetap prosedural untuk gerakan tulang)
-const BODY_ANIMATIONS = {
+const EMOTION_ANIMATIONS = {
   idle: (t) => ({
     spine: { x: Math.sin(t * 1.5) * 1.5 },
     head:  { x: Math.sin(t * 0.8) * 1, z: Math.sin(t * 0.6) * 2 },
@@ -171,10 +142,6 @@ const Model = ({ analyzerNode, emosi = 'idle' }) => {
   const currentExpressions = useRef({ happy: 0, angry: 0, sad: 0, surprised: 0 });
   // Smooth lip-sync value
   const currentMouth = useRef(0);
-  // Unity curve blend state
-  const prevClipRef = useRef('FACE_IDLE_1');
-  const blendFactorRef = useRef(1); // 1 = fully transitioned
-  const clipTimeRef = useRef(0);
 
   useEffect(() => {
     if (gltf) {
@@ -193,22 +160,21 @@ const Model = ({ analyzerNode, emosi = 'idle' }) => {
     if (!vrmRef.current) return;
     
     idleTimeRef.current += delta;
-    clipTimeRef.current += delta;
     const t = idleTimeRef.current;
     const humanoid = vrmRef.current.humanoid;
     const expr = vrmRef.current.expressionManager;
     const lerpSpeed = 0.08;
 
-    // --- 1. POSE + ANIMASI TUBUH (tetap prosedural) ---
+    // --- 1. POSE + ANIMASI EMOSI ---
     const targetPose = POSE_CONFIG[emosi] || POSE_CONFIG.idle;
-    const bodyAnim = (BODY_ANIMATIONS[emosi] || BODY_ANIMATIONS.idle)(t);
+    const emotionAnim = (EMOTION_ANIMATIONS[emosi] || EMOTION_ANIMATIONS.idle)(t);
     const cur = currentRotations.current;
     const bones = ['leftUpperArm', 'rightUpperArm', 'leftLowerArm', 'rightLowerArm', 'head', 'spine'];
     
     bones.forEach(boneName => {
       const bone = humanoid.getNormalizedBoneNode(boneName);
       if (!bone || !targetPose[boneName]) return;
-      const animOffset = bodyAnim[boneName] || {};
+      const animOffset = emotionAnim[boneName] || {};
       
       ['x', 'z'].forEach(axis => {
         if (targetPose[boneName][axis] !== undefined) {
@@ -221,48 +187,10 @@ const Model = ({ analyzerNode, emosi = 'idle' }) => {
       });
     });
 
-    // --- 2. EKSPRESI WAJAH DARI UNITY CURVES ---
-    const currentClipName = EMOTION_TO_CLIP[emosi] || 'FACE_IDLE_1';
-    const currentClip = ANIMATION_CURVES[currentClipName];
-    const prevClipName = prevClipRef.current;
-    const prevClip = ANIMATION_CURVES[prevClipName];
-
-    // Deteksi pergantian emosi → mulai crossfade
-    if (currentClipName !== prevClipRef.current) {
-      prevClipRef.current = currentClipName;
-      blendFactorRef.current = 0; // Mulai blend dari 0
-      clipTimeRef.current = 0;     // Reset waktu clip baru
-    }
-
-    // Advance blend factor (0.3 detik crossfade)
-    if (blendFactorRef.current < 1) {
-      blendFactorRef.current = Math.min(blendFactorRef.current + delta / 0.3, 1);
-    }
-
-    // Sample current clip
-    const currentSampled = currentClip ? sampleClip(currentClip, clipTimeRef.current) : {};
-    // Sample previous clip (untuk blend saat transisi)
-    const prevSampled = (blendFactorRef.current < 1 && prevClip)
-      ? sampleClip(prevClip, t)
-      : currentSampled;
-
-    // Blend antara clip lama dan baru
-    const blended = blendClips(prevSampled, currentSampled, blendFactorRef.current);
-
-    // Terapkan ke VRM expressions
-    for (const [unityAttr, value] of Object.entries(blended)) {
-      const vrmName = UNITY_TO_VRM[unityAttr];
-      if (vrmName && expr) {
-        // Jangan overwrite mouth shapes (aa, oh, ih) jika lip-sync aktif
-        if (analyzerNode && ['aa', 'oh', 'ih', 'ou', 'ee'].includes(vrmName)) continue;
-        expr.setValue(vrmName, Math.max(0, Math.min(1, value)));
-      }
-    }
-
-    // Fallback ekspresi dari POSE_CONFIG (untuk surprised dll yang tidak ada di Unity)
+    // --- 2. EKSPRESI WAJAH ---
     const targetExpr = targetPose.expression || {};
     const curExpr = currentExpressions.current;
-    ['surprised'].forEach(e => {
+    ['happy', 'angry', 'sad', 'surprised'].forEach(e => {
       curExpr[e] = lerp(curExpr[e], targetExpr[e] || 0, lerpSpeed);
       expr?.setValue(e, curExpr[e]);
     });
@@ -272,7 +200,8 @@ const Model = ({ analyzerNode, emosi = 'idle' }) => {
       const dataArray = new Uint8Array(analyzerNode.frequencyBinCount);
       analyzerNode.getByteFrequencyData(dataArray);
       
-      // Ambil frekuensi suara manusia (200Hz-4000Hz) saja
+      // Ambil frekuensi suara manusia (200Hz-4000Hz) saja, bukan seluruh spektrum
+      // Ini membuat lip-sync lebih akurat untuk suara bicara
       const sampleRate = 44100;
       const binSize = sampleRate / analyzerNode.fftSize;
       const lowBin = Math.floor(200 / binSize);
@@ -284,29 +213,32 @@ const Model = ({ analyzerNode, emosi = 'idle' }) => {
       }
       const average = sum / (highBin - lowBin);
       
+      // Target bukaan mulut (0-1)
       const targetMouth = Math.min(average / 80, 1.0);
+      
+      // Smooth lip-sync agar tidak "kaku" / kedap-kedip
       currentMouth.current = lerp(currentMouth.current, targetMouth, 0.25);
       
+      // Variasi bentuk mulut: 'aa' (buka lebar), 'oh' (bulat), 'ih' (lebar)
       const mouth = currentMouth.current;
-      expr?.setValue('aa', mouth * 0.7);
-      expr?.setValue('oh', mouth * 0.3);
-      expr?.setValue('ih', mouth * 0.15);
+      expr?.setValue('aa', mouth * 0.7);          // Buka mulut utama
+      expr?.setValue('oh', mouth * 0.3);          // Sedikit bentuk O
+      expr?.setValue('ih', mouth * 0.15);         // Sedikit bentuk I
     } else {
+      // Kalau tidak ada audio, tutup mulut pelan-pelan
       currentMouth.current = lerp(currentMouth.current, 0, 0.1);
       expr?.setValue('aa', currentMouth.current);
       expr?.setValue('oh', 0);
       expr?.setValue('ih', 0);
     }
 
-    // --- 4. KEDIP OTOMATIS (Unity curves sudah punya Blink, tapi backup jika curve tidak ada) ---
-    if (!blended.Blink && !blended.Blink_L && !blended.Blink_R) {
-      const blinkInterval = emosi === 'gugup' ? 2 : emosi === 'takut' ? 8 : 4;
-      const blinkCycle = t % blinkInterval;
-      if (blinkCycle > (blinkInterval - 0.3) && blinkCycle < (blinkInterval - 0.1)) {
-        expr?.setValue('blink', 1);
-      } else {
-        expr?.setValue('blink', 0);
-      }
+    // --- 4. KEDIP OTOMATIS ---
+    const blinkInterval = emosi === 'gugup' ? 2 : emosi === 'takut' ? 8 : 4;
+    const blinkCycle = t % blinkInterval;
+    if (blinkCycle > (blinkInterval - 0.3) && blinkCycle < (blinkInterval - 0.1)) {
+      expr?.setValue('blink', 1);
+    } else {
+      expr?.setValue('blink', 0);
     }
 
     vrmRef.current.update(delta);

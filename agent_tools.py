@@ -22,6 +22,9 @@ import httpx
 import agent_logger
 from dotenv import load_dotenv
 
+# --- MCP CLIENT ---
+from mcp_client import mcp_registry
+
 load_dotenv()
 
 # ============================================================
@@ -58,6 +61,50 @@ EVOLVE_MODEL_CHAIN = [
 
 OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"
 
+# ============================================================
+# MCP CLIENT INTEGRATION
+# ============================================================
+def call_mcp_tool(server_name: str, tool_name: str, args_dict: dict) -> str:
+    """
+    Memanggil tool dari eksternal MCP Server via registry.
+    Jika gagal, otomatis fallback menggunakan search_web.
+    """
+    try:
+        loop = asyncio.get_event_loop()
+        future = asyncio.run_coroutine_threadsafe(
+            mcp_registry.call_tool(server_name, tool_name, args_dict),
+            loop
+        )
+        return future.result(timeout=30)
+    except Exception as e:
+        print(f"[Error MCP Call] {e}. Fallback menggunakan search_web...")
+        # Fallback ke web_search biasa
+        query = str(args_dict)
+        try:
+            from os_tools import cari_di_internet
+            hasil_fallback = cari_di_internet(query)
+            return f"[Error MCP Call] MCP Server '{server_name}' gagal ({e}).\n\nMenggunakan fallback pencarian web biasa:\n{hasil_fallback}"
+        except Exception as e_fallback:
+            return f"[Error MCP Call] {e}. Dan fallback web_search juga gagal: {e_fallback}"
+
+def get_mcp_tools_system_prompt() -> str:
+    """Mengembalikan daftar tool MCP dalam format string untuk disuntikkan ke prompt."""
+    try:
+        loop = asyncio.get_event_loop()
+        future = asyncio.run_coroutine_threadsafe(mcp_registry.get_all_tools(), loop)
+        tools = future.result(timeout=5)
+        
+        if not tools:
+            return ""
+            
+        prompt = "\n# EKSTERNAL MCP TOOLS (Bisa dipanggil dengan format [TOOL_CALL: mcp_servername_toolname(arg=...)])\n"
+        for t in tools:
+            desc = t.get("description", "")
+            name = t.get("_full_name", t.get("name"))
+            prompt += f"- {name}: {desc}\n"
+        return prompt
+    except Exception as e:
+        return f"<!-- Gagal memuat MCP tools: {e} -->"
 
 def _call_openrouter(messages: list, model: str, headers: dict, timeout: int = 90) -> dict:
     """Panggil OpenRouter API. Return dict {content: str} atau raise Exception."""
@@ -237,11 +284,23 @@ AGENT_TOOLS = {
         "param": "query pencarian (string)",
         "example": 'search_web("React vs Vue 2025")'
     },
+    "web_search": {
+        "function": cari_di_internet,
+        "description": "Mencari informasi di internet via DuckDuckGo (Alias)",
+        "param": "query pencarian (string)",
+        "example": 'web_search("React vs Vue 2025")'
+    },
     "read_file": {
         "function": baca_file,
         "description": "Membaca isi file di sistem lokal",
         "param": "path file (string, absolut atau relatif)",
         "example": 'read_file("./main.py")'
+    },
+    "file_read": {
+        "function": baca_file,
+        "description": "Membaca isi file di sistem lokal (Alias)",
+        "param": "path file (string, absolut atau relatif)",
+        "example": 'file_read("./main.py")'
     },
     "write_file": {
         "function": tulis_file,
@@ -339,6 +398,12 @@ AGENT_TOOLS = {
         "param": "perintah terminal (string)",
         "example": 'run_terminal("pip install requests")'
     },
+    "shell_exec": {
+        "function": jalankan_perintah_terminal,
+        "description": "Menjalankan perintah terminal/shell (Alias)",
+        "param": "perintah terminal (string)",
+        "example": 'shell_exec("pip install requests")'
+    },
     "reload_module": {
         "function": None,  # Special handler
         "description": "Hot-reload modul Python yang baru saja diubah agar perubahan langsung aktif TANPA restart server. Gunakan SETELAH kamu menulis perubahan ke file .py menggunakan write_file.",
@@ -408,6 +473,8 @@ def get_tools_description() -> str:
         desc += f"  - Parameter: {info['param']}\n"
         desc += f"  - Contoh: `{info['example']}`\n\n"
     
+    desc += get_mcp_tools_system_prompt()
+    
     return desc
 
 
@@ -417,6 +484,11 @@ def parse_tool_call(ai_response: str) -> dict | None:
     match = re.search(pattern, ai_response, re.DOTALL)
     
     if not match:
+        # Check for MCP format [TOOL_CALL: name(args)]
+        mcp_pattern = r'\[TOOL_CALL:\s*([a-zA-Z0-9_]+)\((.*?)\)\s*\]'
+        mcp_match = re.search(mcp_pattern, ai_response)
+        if mcp_match:
+            return {"tool": mcp_match.group(1), "param": mcp_match.group(2), "raw_match": mcp_match.group(0), "is_mcp": True}
         return None
     
     try:
@@ -427,18 +499,33 @@ def parse_tool_call(ai_response: str) -> dict | None:
         if tool_name not in AGENT_TOOLS:
             return None
         
-        return {"tool": tool_name, "param": param, "raw_match": match.group(0)}
+        return {"tool": tool_name, "param": param, "raw_match": match.group(0), "is_mcp": False}
     except (json.JSONDecodeError, AttributeError):
         return None
 
 
 def execute_tool(tool_name: str, param: str, agent_id: str = "unknown") -> str:
     """Eksekusi tool dan return hasilnya sebagai string."""
-    if tool_name not in AGENT_TOOLS:
+    
+    # Handle MCP Tools
+    if tool_name.startswith("mcp_"):
+        parts = tool_name.split("_", 2)
+        if len(parts) >= 3:
+            server_name = parts[1]
+            t_name = parts[2]
+            return call_mcp_tool(server_name, t_name, {"args": param})
+        return f"[ERROR] Format tool MCP salah."
+
+    special_tools = [
+        "reload_module", "analyze_graph_intelligence", "screenshot", "generate_techdoc",
+        "moodle_get_tasks", "moodle_download_task", "moodle_upload_draft"
+    ]
+    
+    if tool_name not in AGENT_TOOLS and tool_name not in special_tools:
         return f"[ERROR] Tool '{tool_name}' tidak ditemukan."
     
     # Safety check untuk file operations
-    if tool_name in ("read_file", "write_file", "list_folder", "create_folder", "run_python"):
+    if tool_name in ("read_file", "file_read", "write_file", "list_folder", "create_folder", "run_python"):
         check_path = param.split("|||")[0] if "|||" in param else param
         # Hanya cek path jika param terlihat seperti path
         if "/" in check_path or "\\" in check_path or check_path.endswith(".py"):
@@ -447,7 +534,7 @@ def execute_tool(tool_name: str, param: str, agent_id: str = "unknown") -> str:
                 return f"[BLOCKED] Akses ditolak — {warning}"
     
     # Tambahan: run_terminal butuh pengawasan ketat
-    elif tool_name == "run_terminal":
+    elif tool_name in ("run_terminal", "shell_exec"):
         # Perintah terminal bisa sangat berbahaya
         print(f"[SECURITY] Agent {agent_id} mencoba menjalankan perintah: {param}")
     
@@ -488,6 +575,69 @@ def execute_tool(tool_name: str, param: str, agent_id: str = "unknown") -> str:
             return json.dumps(res.json(), indent=2)
         except Exception as e:
             return f"Error fetching graph intelligence: {e}"
+            
+    # Special handler: generate_techdoc
+    elif tool_name == "generate_techdoc":
+        import tech_doc_generator as tech_gen
+        import uuid
+        import threading
+        import json
+        
+        try:
+            # param bisa berupa JSON string dari Orchestrator
+            if isinstance(param, str):
+                try:
+                    data = json.loads(param)
+                except:
+                    data = {"nama_proyek": param}
+            else:
+                data = param if isinstance(param, dict) else {}
+                
+            jenis = data.get("jenis", "semua")
+            job_id = str(uuid.uuid4())
+            
+            t = threading.Thread(target=tech_gen.generate_techdoc_direct, args=(data, jenis, job_id))
+            t.start()
+            
+            return f"Proses pembuatan dokumen teknis ({jenis}) sedang berjalan. Job ID: {job_id}. Pantau progress via API /api/techdoc/status/{job_id}"
+        except Exception as e:
+            return f"[ERROR] Gagal trigger generate_techdoc: {e}"
+
+    # Special handlers: Moodle Automation
+    elif tool_name in ["moodle_get_tasks", "moodle_download_task", "moodle_upload_draft"]:
+        import moodle_automation as moodle
+        import json
+        import asyncio
+        import threading
+        
+        try:
+            args = json.loads(param) if isinstance(param, str) else param
+            username = args.get("username", "")
+            password = args.get("password", "")
+            
+            # Helper to run async in thread
+            def run_async(coro):
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                return loop.run_until_complete(coro)
+
+            if tool_name == "moodle_get_tasks":
+                tasks = run_async(moodle.run_moodle_login_and_get_tasks(username, password))
+                return f"Tasks found: {json.dumps(tasks, indent=2)}"
+                
+            elif tool_name == "moodle_download_task":
+                task_url = args.get("task_url", "")
+                path = run_async(moodle.run_moodle_download_task(username, password, task_url, "downloads"))
+                return f"File downloaded to: {path}" if path else "No file downloaded."
+                
+            elif tool_name == "moodle_upload_draft":
+                task_url = args.get("task_url", "")
+                file_path = args.get("file_path", "")
+                success = run_async(moodle.run_moodle_upload_draft(username, password, task_url, file_path))
+                return f"Upload success: {success}"
+                
+        except Exception as e:
+            return f"[ERROR] Moodle tool {tool_name} gagal: {e}"
 
     # Special handler: screenshot
     elif tool_name == "screenshot":

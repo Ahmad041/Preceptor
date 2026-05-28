@@ -1,10 +1,10 @@
 """
-Vision Loop — Periodic screenshot capture + AI Vision analysis.
-Memberikan "mata" ke agen: mengambil screenshot layar secara berkala
-dan mengirimnya ke AI Vision API untuk analisis konteks.
+Vision Loop — Periodic screenshot capture + LOCAL AI Vision analysis via Ollama.
+Memberikan "mata" ke BOCCHI-JARVIS: mengambil screenshot layar secara berkala
+dan mengirimnya ke Ollama lokal (qwen2.5vl:7b) untuk analisis konteks.
 
-Strategy: Gemini (free tier) → OpenRouter (free tier) fallback.
-Rate limiting: Min 30s interval + cooldown on 429.
+Strategy: Ollama lokal (primary) → Gemini (fallback) → OpenRouter (fallback)
+Rate limiting: Min 15s interval.
 
 Usage:
     from vision_loop import vision_engine
@@ -24,44 +24,94 @@ from datetime import datetime
 from PIL import ImageGrab
 
 # ============================================================
-# VISION ENGINE — Background Screenshot Analysis
+# VISION ENGINE — Background Screenshot Analysis (Ollama Local)
 # ============================================================
 
 _VISION_PROMPT = """Analyze this desktop screenshot. Respond in JSON format only:
 {
     "description": "Brief 1-2 sentence description of what's visible on screen",
     "active_window": "Name of the active/focused application window",
-    "elements": ["list", "of", "key", "UI", "elements", "visible"]
+    "elements": ["list", "of", "key", "UI", "elements", "visible"],
+    "text_content": "Any readable text visible on screen (OCR)",
+    "actionable": ["suggested actions based on context"]
 }
 Be concise. Focus on the main activity happening on screen."""
+
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+
+def get_ollama_vision_model() -> str:
+    """Detect available local vision models dynamically.
+    
+    Supports variations: qwen2.5vl:7b (no dash), qwen2.5-vl:7b (with dash),
+    llava, bakllava, and other vision-capable models.
+    """
+    try:
+        resp = requests.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=3)
+        if resp.status_code == 200:
+            models = [m.get("name", "") for m in resp.json().get("models", [])]
+            
+            # Pass 1: exact 7b match (highest priority)
+            for m in models:
+                if m in ("qwen2.5vl:7b", "qwen2.5-vl:7b"):
+                    print(f"[VISION] [OK] Detected exact vision model: {m}")
+                    return m
+            
+            # Pass 2: any qwen2.5 vision variant
+            for m in models:
+                if "qwen2.5vl" in m or "qwen2.5-vl" in m:
+                    print(f"[VISION] [OK] Detected qwen2.5 vision variant: {m}")
+                    return m
+            
+            # Pass 3: other known vision models
+            for m in models:
+                if "llava" in m.lower() or "bakllava" in m.lower() or "minicpm-v" in m.lower():
+                    print(f"[VISION] [OK] Detected alternative vision model: {m}")
+                    return m
+            
+            print(f"[VISION] [WARN] Tidak ada model vision ditemukan di Ollama. Models tersedia: {models}")
+    except Exception as e:
+        print(f"[VISION] Tidak bisa koneksi ke Ollama: {e}")
+    
+    # Fallback ke tag yang paling umum
+    return "qwen2.5vl:7b"
+
 
 
 class VisionEngine:
     def __init__(self):
         self._running = False
         self._thread = None
-        self._interval = 30  # Default 30 detik (hemat quota free tier)
+        self._interval = 30  # Default 30 detik
         self._current_analysis = {
             "timestamp": None,
             "description": "Vision engine belum aktif.",
             "elements": [],
+            "active_window": None,
+            "text_content": "",
+            "actionable": [],
             "screenshot_path": None,
-            "status": "idle"
+            "status": "idle",
+            "provider": None
         }
         self._lock = threading.Lock()
         self._capture_dir = os.path.join(os.getcwd(), "data", "vision_captures")
         os.makedirs(self._capture_dir, exist_ok=True)
         self._history = []  # Last N analyses
         self._max_history = 10
-        self._cooldown_until = 0  # Unix timestamp — skip analysis until this time
-        self._provider = "auto"  # 'auto', 'gemini', 'openrouter'
+        self._cooldown_until = 0
+        self._provider = "auto"  # 'auto', 'ollama', 'gemini', 'openrouter'
+        self._on_analysis_callback = None  # Callback to notify jarvis orchestrator
     
+    def set_analysis_callback(self, callback):
+        """Set callback yang dipanggil setiap analisis selesai."""
+        self._on_analysis_callback = callback
+
     def start(self, interval: int = 30):
         """Mulai vision loop di background thread."""
         if self._running:
             return {"status": "already_running"}
         
-        self._interval = max(15, interval)  # Minimum 15 detik (free tier safe)
+        self._interval = max(15, interval)
         self._running = True
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
@@ -96,6 +146,14 @@ class VisionEngine:
         self._interval = max(15, seconds)
         return {"interval": self._interval}
     
+    def set_provider(self, provider: str):
+        """Set vision provider: auto, ollama, gemini, openrouter."""
+        valid = ["auto", "ollama", "gemini", "openrouter"]
+        if provider not in valid:
+            return {"error": f"Provider tidak valid. Pilih: {valid}"}
+        self._provider = provider
+        return {"provider": self._provider}
+
     def capture_now(self) -> dict:
         """Force capture sekarang juga (tanpa menunggu interval)."""
         return self._do_capture()
@@ -140,19 +198,23 @@ class VisionEngine:
             # Convert to base64 for API
             buffer = io.BytesIO()
             screenshot.save(buffer, format="PNG")
-            b64_image = base64.b64encode(buffer.getvalue()).decode()
+            img_bytes = buffer.getvalue()
+            b64_image = base64.b64encode(img_bytes).decode()
             
             # Check cooldown (rate limit protection)
             if time.time() < self._cooldown_until:
                 remaining = int(self._cooldown_until - time.time())
                 analysis = {
-                    "description": f"⏳ Rate limit cooldown — menunggu {remaining}s sebelum analisis berikutnya.",
+                    "description": f"⏳ Rate limit cooldown — menunggu {remaining}s.",
                     "elements": [],
-                    "active_window": "Cooldown"
+                    "active_window": "Cooldown",
+                    "text_content": "",
+                    "actionable": []
                 }
+                provider_used = "cooldown"
             else:
-                # Analyze with AI Vision (Gemini → OpenRouter fallback)
-                analysis = self._analyze_vision(b64_image)
+                # Analyze with AI Vision
+                analysis, provider_used = self._analyze_vision(b64_image, filepath)
             
             # Update current state
             with self._lock:
@@ -161,8 +223,11 @@ class VisionEngine:
                     "description": analysis.get("description", "Analisis gagal"),
                     "elements": analysis.get("elements", []),
                     "active_window": analysis.get("active_window", "Unknown"),
+                    "text_content": analysis.get("text_content", ""),
+                    "actionable": analysis.get("actionable", []),
                     "screenshot_path": filepath,
-                    "status": "running" if self._running else "stopped"
+                    "status": "running" if self._running else "stopped",
+                    "provider": provider_used
                 }
                 
                 # Add to history
@@ -170,6 +235,13 @@ class VisionEngine:
                 if len(self._history) > self._max_history:
                     self._history.pop(0)
                     self._cleanup_old_captures()
+            
+            # Notify orchestrator
+            if self._on_analysis_callback:
+                try:
+                    self._on_analysis_callback(self._current_analysis)
+                except Exception:
+                    pass
             
             return self._current_analysis
             
@@ -179,34 +251,95 @@ class VisionEngine:
                 "description": f"Capture error: {e}",
                 "elements": [],
                 "screenshot_path": None,
-                "status": "error"
+                "status": "error",
+                "provider": None
             }
             with self._lock:
                 self._current_analysis = error_result
             return error_result
     
-    def _analyze_vision(self, b64_image: str) -> dict:
-        """Try Gemini first, fallback to OpenRouter on failure/429."""
+    def _analyze_vision(self, b64_image: str, filepath: str = None) -> tuple:
+        """Try providers in order: Ollama → Gemini → OpenRouter.
+        Returns: (analysis_dict, provider_name)
+        """
         
+        # 1. Try Ollama local (primary — no internet needed)
+        if self._provider in ("auto", "ollama"):
+            result = self._try_ollama(b64_image, filepath)
+            if result:
+                return result, "ollama"
+        
+        # 2. Fallback: Gemini API
         if self._provider in ("auto", "gemini"):
             result = self._try_gemini(b64_image)
             if result:
-                return result
+                return result, "gemini"
         
-        # Fallback: OpenRouter (free vision models)
+        # 3. Fallback: OpenRouter
         if self._provider in ("auto", "openrouter"):
             result = self._try_openrouter(b64_image)
             if result:
-                return result
+                return result, "openrouter"
         
         return {
-            "description": "❌ Semua provider vision gagal. Cek API keys di .env",
+            "description": "❌ Semua provider vision gagal.",
             "elements": [],
-            "active_window": "Unknown"
-        }
-    
+            "active_window": "Unknown",
+            "text_content": "",
+            "actionable": []
+        }, "none"
+
+    def _try_ollama(self, b64_image: str, filepath: str = None) -> dict | None:
+        """Analisis via Ollama lokal."""
+        try:
+            model_name = get_ollama_vision_model()
+            # Use /api/chat with images
+            messages = [
+                {
+                    "role": "user",
+                    "content": _VISION_PROMPT,
+                    "images": [b64_image]
+                }
+            ]
+            
+            resp = requests.post(
+                f"{OLLAMA_BASE_URL}/api/chat",
+                json={
+                    "model": model_name,
+                    "messages": messages,
+                    "stream": False,
+                    "options": {
+                        "temperature": 0.3,
+                        "num_predict": 500
+                    }
+                },
+                timeout=60
+            )
+            
+            if resp.status_code == 404:
+                print(f"[VISION] Model {model_name} belum di-pull. Jalankan: ollama pull {model_name}")
+                return None
+            
+            resp.raise_for_status()
+            data = resp.json()
+            text = data.get("message", {}).get("content", "")
+            
+            if not text:
+                return None
+            
+            result = self._parse_json_response(text)
+            print(f"[VISION] ✅ Ollama lokal berhasil analisis")
+            return result
+            
+        except requests.exceptions.ConnectionError:
+            print("[VISION] Ollama tidak berjalan — skip ke fallback")
+            return None
+        except Exception as e:
+            print(f"[VISION] Ollama error: {str(e)[:80]}")
+            return None
+
     def _try_gemini(self, b64_image: str) -> dict | None:
-        """Coba analisis via Gemini API (free tier)."""
+        """Coba analisis via Gemini API (free tier) — fallback."""
         try:
             from google import genai
             from google.genai import types
@@ -231,16 +364,14 @@ class VisionEngine:
         except Exception as e:
             error_str = str(e)
             if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
-                # Rate limited — activate cooldown (60s) + switch to OpenRouter
-                print(f"[VISION] Gemini 429 rate limit — cooldown 60s, switching to OpenRouter")
+                print(f"[VISION] Gemini 429 — cooldown 60s")
                 self._cooldown_until = time.time() + 60
-                self._provider = "openrouter"
                 return None
             print(f"[VISION] Gemini error: {error_str[:80]}")
             return None
     
     def _try_openrouter(self, b64_image: str) -> dict | None:
-        """Coba analisis via OpenRouter free vision model."""
+        """Coba analisis via OpenRouter free vision model — fallback."""
         try:
             api_key = os.getenv("OPENROUTER_API_KEY", "")
             if not api_key:
@@ -306,12 +437,14 @@ class VisionEngine:
                 text = text.split("\n", 1)[1]
                 text = text.rsplit("```", 1)[0]
             return json.loads(text)
-        except:
+        except Exception:
             # If JSON parsing fails, return text as description
             return {
-                "description": text[:200] if text else "Parsing gagal",
+                "description": text[:300] if text else "Parsing gagal",
                 "elements": [],
-                "active_window": "Unknown"
+                "active_window": "Unknown",
+                "text_content": "",
+                "actionable": []
             }
     
     def _cleanup_old_captures(self):
@@ -324,7 +457,7 @@ class VisionEngine:
             ])
             while len(files) > 20:
                 os.remove(files.pop(0))
-        except:
+        except Exception:
             pass
 
 

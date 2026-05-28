@@ -32,6 +32,14 @@ function App() {
   const [uploading, setUploading] = useState(false)
   const [showDocs, setShowDocs] = useState(false)
   
+  // Desktop Pilot state
+  const [pendingActions, setPendingActions] = useState([]);
+  
+  // Vision state
+  const [visionRunning, setVisionRunning] = useState(false);
+  const [visionData, setVisionData] = useState(null);
+  const [visionInterval, setVisionInterval] = useState(30);
+  
   // State untuk Fitur Canvas
   const [showCanvas, setShowCanvas] = useState(false)
   const [canvasContent, setCanvasContent] = useState('')
@@ -43,6 +51,36 @@ function App() {
   const [fileLoading, setFileLoading] = useState(false)
   const [catatanList, setCatatanList] = useState([])
   const [permissionRequest, setPermissionRequest] = useState(null)
+
+  // Voice state
+  const [isRecording, setIsRecording] = useState(false)
+  const [voiceEnabled, setVoiceEnabled] = useState(true)
+  const mediaRecorderRef = useRef(null)
+  const audioChunksRef = useRef([])
+
+  // Memory Browser state
+  const [showMemory, setShowMemory] = useState(false)
+  const [memories, setMemories] = useState([])
+  const [memoryQuery, setMemoryQuery] = useState('')
+  const [memorySearchResults, setMemorySearchResults] = useState(null)
+  const [memoryLoading, setMemoryLoading] = useState(false)
+  const [newMemoryText, setNewMemoryText] = useState('')
+  const [showAddMemory, setShowAddMemory] = useState(false)
+
+  // DOCX Generator state
+  const [showDocx, setShowDocx] = useState(false)
+  const [docxSessionId, setDocxSessionId] = useState(null)
+  const [docxChat, setDocxChat] = useState([])
+  const [docxInput, setDocxInput] = useState('')
+  const [docxDone, setDocxDone] = useState(false)
+  const [docxJobId, setDocxJobId] = useState(null)
+  const [docxJobStatus, setDocxJobStatus] = useState(null)
+  const [docxFiles, setDocxFiles] = useState([])
+  const [docxRefs, setDocxRefs] = useState([])
+  const [docxUploading, setDocxUploading] = useState(false)
+
+  const docxFileInputRef = useRef(null)
+  const docxJobPollRef = useRef(null)
 
   const fileInputRef = useRef(null)
   const typingRef = useRef(null)
@@ -64,6 +102,20 @@ function App() {
       } catch (e) {
         console.error('Failed to get system status', e);
       }
+
+      // Poll pending actions
+      try {
+        const pendingRes = await axios.get('http://localhost:8000/api/desktop/pending');
+        setPendingActions(pendingRes.data.pending || []);
+      } catch (e) {}
+
+      // Poll vision state
+      try {
+        const visionRes = await axios.get('http://localhost:8000/api/vision/status');
+        setVisionRunning(visionRes.data.running);
+        setVisionData(visionRes.data.current);
+      } catch (e) {}
+
     }, 3000);
     return () => clearInterval(interval);
   }, []);
@@ -88,6 +140,30 @@ function App() {
     typingRef.current = setTimeout(tick, 22);
     return () => clearTimeout(typingRef.current);
   }, [jawaban]);
+
+  const approveAction = async (actionId) => {
+    try {
+      await axios.post('http://localhost:8000/api/desktop/approve', { action_id: actionId });
+    } catch (e) { console.error('Gagal approve', e); }
+  };
+
+  const rejectAction = async (actionId) => {
+    try {
+      await axios.post('http://localhost:8000/api/desktop/reject', { action_id: actionId });
+    } catch (e) { console.error('Gagal reject', e); }
+  };
+
+  const toggleVision = async () => {
+    try {
+      if (visionRunning) {
+        await axios.post('http://localhost:8000/api/vision/stop');
+        setVisionRunning(false);
+      } else {
+        await axios.post(`http://localhost:8000/api/vision/start?interval=${visionInterval}`);
+        setVisionRunning(true);
+      }
+    } catch (e) { console.error('Gagal toggle vision', e); }
+  };
 
   const ambilDaftarDokumen = async () => {
     try {
@@ -122,9 +198,209 @@ function App() {
     } catch (err) {}
   };
 
-  const kirimKeAi = async () => {
-    if (!pesan.trim() || loading) return;
-    const pesanKirim = pesan;
+  // ============ VOICE HANDLERS ============
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+        const formData = new FormData();
+        formData.append('file', audioBlob, 'voice.wav');
+
+        try {
+          const res = await axios.post('http://localhost:8000/api/jarvis/transcribe', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+          
+          if (res.data.text && res.data.text.trim()) {
+            setPesan(res.data.text);
+            setTimeout(() => kirimKeAi(res.data.text), 100);
+          }
+        } catch (err) {
+          console.error('Gagal transkripsi audio', err);
+        } finally {
+          stream.getTracks().forEach(track => track.stop());
+        }
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (e) {
+      console.error('Mikrofon tidak dapat diakses', e);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
+  const handleMicClick = () => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  };
+
+  // ============ MEMORY HANDLERS ============
+  const fetchMemories = async () => {
+    setMemoryLoading(true);
+    try {
+      const res = await axios.get('http://localhost:8000/api/jarvis/memories');
+      setMemories(res.data || []);
+      setMemorySearchResults(null);
+    } catch (e) { console.error(e); }
+    setMemoryLoading(false);
+  };
+
+  const searchMemories = async () => {
+    if (!memoryQuery.trim()) { fetchMemories(); return; }
+    setMemoryLoading(true);
+    try {
+      const res = await axios.get(`http://localhost:8000/api/jarvis/memories?query=${encodeURIComponent(memoryQuery)}`);
+      setMemorySearchResults(res.data || []);
+    } catch (e) { console.error('Gagal cari memori', e); }
+    setMemoryLoading(false);
+  };
+
+  const deleteMemory = async (item) => {
+    try {
+      const params = item.chroma_id ? `?chroma_id=${encodeURIComponent(item.chroma_id)}` : '';
+      await axios.delete(`http://localhost:8000/api/jarvis/memories/${item.index}${params}`);
+      fetchMemories();
+    } catch (e) { console.error('Gagal hapus memori', e); }
+  };
+
+  const addMemory = async () => {
+    if (!newMemoryText.trim()) return;
+    try {
+      await axios.post('http://localhost:8000/api/jarvis/memories', { text: newMemoryText, nama: 'Memori Obrolan Sandbox' });
+      setNewMemoryText('');
+      setShowAddMemory(false);
+      fetchMemories();
+    } catch (e) { console.error('Gagal tambah memori', e); }
+  };
+
+  const clearAllMemories = async () => {
+    if (!window.confirm('Hapus SEMUA memori jangka panjang? Aksi ini tidak dapat dibatalkan.')) return;
+    try {
+      await axios.delete('http://localhost:8000/api/jarvis/memories-clear');
+      fetchMemories();
+    } catch (e) { console.error('Gagal hapus semua memori', e); }
+  };
+
+  useEffect(() => {
+    if (showMemory) fetchMemories();
+  }, [showMemory]);
+
+  // ============ DOCX HANDLERS ============
+  const fetchDocxFiles = async () => {
+    try {
+      const res = await axios.get('http://localhost:8000/api/docx/list');
+      setDocxFiles(res.data.docs || []);
+    } catch (e) { console.error(e); }
+  };
+
+  const fetchDocxRefs = async () => {
+    try {
+      const res = await axios.get('http://localhost:8000/api/docx/references/list');
+      setDocxRefs(res.data.files || []);
+    } catch (e) { console.error(e); }
+  };
+
+  useEffect(() => {
+    if (showDocx) {
+      fetchDocxFiles();
+      fetchDocxRefs();
+    }
+  }, [showDocx]);
+
+  const startDocxSession = async () => {
+    try {
+      const res = await axios.post('http://localhost:8000/api/docx/session/start', {});
+      setDocxSessionId(res.data.session_id);
+      setDocxDone(false);
+      setDocxJobId(null);
+      setDocxJobStatus(null);
+      setDocxChat([{ role: 'ai', text: res.data.question, options: res.data.options || [] }]);
+    } catch (e) { console.error('Gagal mulai sesi DOCX', e); }
+  };
+
+  const sendDocxAnswer = async (answer) => {
+    if (!docxSessionId || !answer.trim()) return;
+    const ans = answer.trim();
+    setDocxChat(prev => [...prev, { role: 'user', text: ans }]);
+    setDocxInput('');
+    try {
+      const res = await axios.post('http://localhost:8000/api/docx/session/answer', { session_id: docxSessionId, answer: ans });
+      if (res.data.done) {
+        setDocxDone(true);
+        setDocxChat(prev => [...prev, { role: 'ai', text: res.data.message || 'Semua informasi terkumpul! Siap generate.', options: [] }]);
+      } else {
+        setDocxChat(prev => [...prev, { role: 'ai', text: res.data.question, options: res.data.options || [] }]);
+      }
+    } catch (e) { console.error('Gagal kirim jawaban', e); }
+  };
+
+  const generateDocx = async () => {
+    if (!docxSessionId) return;
+    try {
+      const res = await axios.post('http://localhost:8000/api/docx/generate', { session_id: docxSessionId });
+      setDocxJobId(res.data.job_id);
+      setDocxJobStatus({ progress: 0, step: 'Memulai...', done: false });
+      
+      docxJobPollRef.current = setInterval(async () => {
+        try {
+          const statusRes = await axios.get(`http://localhost:8000/api/docx/generate/status/${res.data.job_id}`);
+          setDocxJobStatus(statusRes.data);
+          if (statusRes.data.done) {
+            clearInterval(docxJobPollRef.current);
+            fetchDocxFiles();
+          }
+        } catch (err) { console.error(err); }
+      }, 3000);
+    } catch (e) { console.error('Gagal trigger generate', e); }
+  };
+
+  const uploadDocxRef = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setDocxUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      await axios.post('http://localhost:8000/api/docx/references/upload', formData);
+      fetchDocxRefs();
+    } catch (err) { console.error('Gagal upload file referensi', err); }
+    setDocxUploading(false);
+    if (docxFileInputRef.current) docxFileInputRef.current.value = '';
+  };
+
+  const deleteDocxRef = async (filename, type) => {
+    try {
+      await axios.delete(`http://localhost:8000/api/docx/references/${filename}?file_type=${type}`);
+      fetchDocxRefs();
+    } catch (e) { console.error('Gagal hapus referensi', e); }
+  };
+
+  useEffect(() => { return () => clearInterval(docxJobPollRef.current); }, []);
+
+  const kirimKeAi = async (pesanOverride) => {
+    const pesanKirim = typeof pesanOverride === 'string' ? pesanOverride : pesan;
+    if (!pesanKirim.trim() || loading) return;
     setPesan('');
     setShowInput(false);
     setLoading(true);
@@ -136,7 +412,8 @@ function App() {
         pesan: pesanKirim,
         user_nama: userProfile.nama,
         user_hubungan: userProfile.hubungan,
-        lihat_layar: lihatLayar
+        lihat_layar: lihatLayar,
+        voice_enabled: voiceEnabled
       });
       
       if (response.data.status === "needs_permission") {
@@ -436,7 +713,7 @@ function App() {
         color: isPanicking ? '#f87171' : '#a9b1d6', fontSize: '12px', fontFamily: 'monospace',
         border: `1px solid ${isPanicking ? '#f87171' : 'rgba(255,255,255,0.1)'}`
       }}>
-        CPU: {systemStats.cpu.toFixed(1)}% | RAM: {systemStats.ram.toFixed(1)}%
+        Vision: {visionRunning ? 'ON' : 'OFF'}
       </div>
     <div
       style={{
@@ -501,6 +778,24 @@ function App() {
         >
           {showCanvas ? '📖' : '📘'}
         </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); toggleVision(); }}
+          title={visionRunning ? "Stop Vision" : "Start Vision"}
+          style={{
+            background: visionRunning ? 'rgba(52,211,153,0.3)' : 'transparent',
+            border: '1px solid',
+            borderColor: visionRunning ? 'rgba(52,211,153,0.5)' : 'transparent',
+            color: '#34d399',
+            fontSize: '22px',
+            cursor: 'pointer',
+            padding: '10px',
+            borderRadius: '12px',
+            transition: 'all 0.3s',
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}
+        >
+          {visionRunning ? '👁️' : '🕶️'}
+        </button>
       </div>
 
       {/* ── Top Bar ── */}
@@ -528,7 +823,35 @@ function App() {
         </button>
         <div style={{ display: 'flex', gap: '8px' }}>
           <button
-            onClick={(e) => { e.stopPropagation(); setShowDocs(d => !d); }}
+            onClick={(e) => { e.stopPropagation(); setShowDocs(false); setShowDocx(false); setShowMemory(m => !m); }}
+            style={{
+              background: showMemory ? 'rgba(244,114,182,0.3)' : 'rgba(255,255,255,0.12)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              color: 'white',
+              padding: '5px 14px',
+              borderRadius: '20px',
+              fontSize: '12px',
+              cursor: 'pointer',
+            }}
+          >
+            🧠 Memory
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowDocs(false); setShowMemory(false); setShowDocx(d => !d); }}
+            style={{
+              background: showDocx ? 'rgba(244,114,182,0.3)' : 'rgba(255,255,255,0.12)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              color: 'white',
+              padding: '5px 14px',
+              borderRadius: '20px',
+              fontSize: '12px',
+              cursor: 'pointer',
+            }}
+          >
+            📝 DOCX
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowMemory(false); setShowDocx(false); setShowDocs(d => !d); }}
             style={{
               background: showDocs ? 'rgba(244,114,182,0.3)' : 'rgba(255,255,255,0.12)',
               border: '1px solid rgba(255,255,255,0.2)',
@@ -624,6 +947,209 @@ function App() {
               ))}
             </ul>
           )}
+        </div>
+      )}
+
+      {/* ── Memory Panel ── */}
+      {showMemory && (
+        <div
+          onClick={e => e.stopPropagation()}
+          style={{
+            position: 'absolute', top: '52px', right: '12px',
+            width: '320px',
+            background: 'rgba(20, 5, 40, 0.95)',
+            border: '1px solid rgba(244,114,182,0.5)',
+            borderRadius: '12px',
+            padding: '16px',
+            zIndex: 35,
+            color: 'white',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <span style={{ fontWeight: 700, fontSize: '13px' }}>🧠 Memory Browser</span>
+            <button onClick={clearAllMemories} style={{ background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', padding: '4px 8px', fontSize: '11px', cursor: 'pointer' }}>
+              Clear All
+            </button>
+          </div>
+          
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+            <input 
+              type="text" 
+              value={memoryQuery} 
+              onChange={e => setMemoryQuery(e.target.value)} 
+              placeholder="Cari ingatan..."
+              style={{ flex: 1, padding: '6px', borderRadius: '4px', border: 'none', background: 'rgba(255,255,255,0.1)', color: 'white', fontSize: '12px' }}
+            />
+            <button onClick={searchMemories} style={{ background: '#3b82f6', color: 'white', border: 'none', borderRadius: '4px', padding: '0 10px', cursor: 'pointer' }}>
+              🔍
+            </button>
+          </div>
+
+          <div style={{ maxHeight: '200px', overflowY: 'auto', marginBottom: '12px' }}>
+            {memoryLoading ? (
+              <p style={{ fontSize: '12px', color: 'gray', textAlign: 'center' }}>Memuat...</p>
+            ) : (memorySearchResults || memories).length === 0 ? (
+              <p style={{ fontSize: '12px', color: 'gray', textAlign: 'center' }}>Tidak ada ingatan.</p>
+            ) : (
+              <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {(memorySearchResults || memories).map((m, i) => (
+                  <li key={i} style={{ background: 'rgba(255,255,255,0.05)', padding: '8px', borderRadius: '6px', fontSize: '11px', display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ flex: 1 }}>{m.text}</span>
+                    <button onClick={() => deleteMemory(m)} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', padding: '0 4px' }}>✕</button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {showAddMemory ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <textarea 
+                value={newMemoryText} 
+                onChange={e => setNewMemoryText(e.target.value)}
+                placeholder="Ingatan baru..."
+                style={{ background: 'rgba(255,255,255,0.1)', color: 'white', border: 'none', borderRadius: '4px', padding: '6px', fontSize: '12px', resize: 'none', height: '50px' }}
+              />
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button onClick={addMemory} style={{ flex: 1, background: '#10b981', color: 'white', border: 'none', borderRadius: '4px', padding: '4px', fontSize: '11px', cursor: 'pointer' }}>Simpan</button>
+                <button onClick={() => setShowAddMemory(false)} style={{ flex: 1, background: 'rgba(255,255,255,0.2)', color: 'white', border: 'none', borderRadius: '4px', padding: '4px', fontSize: '11px', cursor: 'pointer' }}>Batal</button>
+              </div>
+            </div>
+          ) : (
+            <button onClick={() => setShowAddMemory(true)} style={{ width: '100%', background: 'rgba(255,255,255,0.1)', color: 'white', border: 'none', borderRadius: '4px', padding: '6px', fontSize: '12px', cursor: 'pointer' }}>
+              + Tambah Manual
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ── DOCX Panel ── */}
+      {showDocx && (
+        <div
+          onClick={e => e.stopPropagation()}
+          style={{
+            position: 'absolute', top: '52px', right: '12px',
+            width: '350px',
+            background: 'rgba(20, 5, 40, 0.95)',
+            border: '1px solid rgba(244,114,182,0.5)',
+            borderRadius: '12px',
+            padding: '16px',
+            zIndex: 35,
+            color: 'white',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <span style={{ fontWeight: 700, fontSize: '13px' }}>📝 DOCX Generator</span>
+            <label style={{ background: '#3b82f6', color: 'white', padding: '4px 12px', borderRadius: '20px', fontSize: '11px', cursor: 'pointer', fontWeight: 700 }}>
+              {docxUploading ? '⏳...' : '+ Referensi'}
+              <input type="file" ref={docxFileInputRef} accept=".txt,.pdf,.md,.docx" onChange={uploadDocxRef} style={{ display: 'none' }} />
+            </label>
+          </div>
+
+          <div style={{ display: 'flex', gap: '4px', marginBottom: '12px', overflowX: 'auto', paddingBottom: '4px' }}>
+            {docxRefs.map((ref, i) => (
+              <span key={i} style={{ background: 'rgba(59,130,246,0.3)', padding: '2px 8px', borderRadius: '12px', fontSize: '10px', whiteSpace: 'nowrap' }}>
+                {ref.filename} <button onClick={() => deleteDocxRef(ref.filename, ref.type)} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer' }}>✕</button>
+              </span>
+            ))}
+          </div>
+
+          {!docxSessionId ? (
+            <button onClick={startDocxSession} style={{ width: '100%', padding: '10px', background: '#f472b6', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>
+              Mulai Pembuatan DOCX
+            </button>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ maxHeight: '200px', overflowY: 'auto', background: 'rgba(0,0,0,0.3)', padding: '8px', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {docxChat.map((msg, i) => (
+                  <div key={i} style={{ alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', background: msg.role === 'user' ? '#f472b6' : 'rgba(255,255,255,0.1)', padding: '8px 12px', borderRadius: '12px', fontSize: '12px', maxWidth: '85%' }}>
+                    {msg.text}
+                  </div>
+                ))}
+              </div>
+              
+              {!docxDone ? (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input type="text" value={docxInput} onChange={e => setDocxInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendDocxAnswer(docxInput)} placeholder="Jawaban..." style={{ flex: 1, padding: '8px', borderRadius: '8px', border: 'none', background: 'rgba(255,255,255,0.1)', color: 'white', fontSize: '12px' }} />
+                  <button onClick={() => sendDocxAnswer(docxInput)} style={{ background: '#10b981', color: 'white', border: 'none', borderRadius: '8px', padding: '0 12px', cursor: 'pointer' }}>Kirim</button>
+                </div>
+              ) : (
+                <button onClick={generateDocx} disabled={!!docxJobId} style={{ padding: '10px', background: docxJobId ? '#6b7280' : '#10b981', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>
+                  {docxJobId ? 'Proses...' : 'Generate File DOCX'}
+                </button>
+              )}
+
+              {docxJobStatus && (
+                <div style={{ fontSize: '11px', textAlign: 'center', marginTop: '4px', color: '#60a5fa' }}>
+                  Status: {docxJobStatus.step}
+                </div>
+              )}
+            </div>
+          )}
+
+          {docxFiles.length > 0 && (
+            <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+              <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#f9a8d4', display: 'block', marginBottom: '8px' }}>📂 File Tersedia:</span>
+              <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {docxFiles.map((file, i) => (
+                  <li key={i} style={{ fontSize: '11px' }}>
+                    <a href={`http://localhost:8000/api/docx/download/${file.filename}`} target="_blank" rel="noreferrer" style={{ color: '#60a5fa', textDecoration: 'none' }}>
+                      📄 {file.filename}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Pending Actions Widget ── */}
+      {pendingActions.length > 0 && (
+        <div style={{
+          position: 'absolute', top: showDocs ? '300px' : '52px', right: '12px',
+          width: '320px',
+          background: 'rgba(20, 20, 20, 0.95)',
+          border: '1px solid #3b82f6',
+          borderRadius: '12px',
+          padding: '16px',
+          zIndex: 40,
+          color: 'white',
+          maxHeight: '300px',
+          overflowY: 'auto'
+        }}>
+          <h4 style={{ margin: '0 0 10px 0', color: '#60a5fa', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            🚀 Pilot Actions Pending ({pendingActions.length})
+          </h4>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {pendingActions.map(action => (
+              <div key={action.id} style={{
+                background: 'rgba(255,255,255,0.05)',
+                padding: '10px', borderRadius: '8px',
+                border: '1px solid rgba(255,255,255,0.1)'
+              }}>
+                <div style={{ fontSize: '12px', marginBottom: '8px' }}>
+                  <strong>{action.tool}</strong>: {action.instruction}
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); approveAction(action.id); }}
+                    style={{
+                      flex: 1, background: '#10b981', color: 'white', border: 'none',
+                      padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold'
+                    }}
+                  >✓ Approve</button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); rejectAction(action.id); }}
+                    style={{
+                      flex: 1, background: '#ef4444', color: 'white', border: 'none',
+                      padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold'
+                    }}
+                  >✕ Reject</button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -831,42 +1357,77 @@ function App() {
                 paddingTop: '12px',
               }}
             >
-              <input
-                autoFocus
-                type="text"
-                value={pesan}
-                onChange={e => setPesan(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && kirimKeAi()}
-                placeholder={`Katakan sesuatu kepada Bocchi...`}
-                style={{
-                  flex: 1,
-                  background: 'rgba(255,255,255,0.08)',
-                  border: '1px solid rgba(244,114,182,0.4)',
-                  borderRadius: '12px',
-                  padding: '10px 16px',
-                  color: 'white',
-                  fontSize: '14px',
-                  outline: 'none',
-                }}
-              />
-              <button
-                onClick={kirimKeAi}
-                disabled={!pesan.trim()}
-                style={{
-                  background: pesan.trim() ? '#e11d48' : 'rgba(255,255,255,0.1)',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '12px',
-                  padding: '10px 22px',
-                  fontWeight: 700,
-                  fontSize: '14px',
-                  cursor: pesan.trim() ? 'pointer' : 'not-allowed',
-                  transition: 'background 0.2s',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                Kirim ▶
-              </button>
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: '8px' }}>
+                <input
+                  autoFocus
+                  type="text"
+                  value={pesan}
+                  onChange={e => setPesan(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && kirimKeAi()}
+                  placeholder={`Katakan sesuatu kepada Bocchi...`}
+                  style={{
+                    width: '100%',
+                    background: 'rgba(255,255,255,0.08)',
+                    border: '1px solid rgba(244,114,182,0.4)',
+                    borderRadius: '12px',
+                    padding: '10px 16px',
+                    color: 'white',
+                    fontSize: '14px',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'stretch' }}>
+                <button
+                  onClick={() => setVoiceEnabled(!voiceEnabled)}
+                  title={voiceEnabled ? "Voice Output ON" : "Voice Output OFF"}
+                  style={{
+                    background: voiceEnabled ? 'rgba(52,211,153,0.2)' : 'rgba(255,255,255,0.1)',
+                    border: `1px solid ${voiceEnabled ? 'rgba(52,211,153,0.5)' : 'rgba(255,255,255,0.2)'}`,
+                    color: 'white',
+                    borderRadius: '12px',
+                    padding: '0 16px',
+                    fontSize: '18px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {voiceEnabled ? '🔊' : '🔇'}
+                </button>
+                <button
+                  onClick={handleMicClick}
+                  style={{
+                    background: isRecording ? '#ef4444' : 'rgba(255,255,255,0.1)',
+                    border: `1px solid ${isRecording ? '#ef4444' : 'rgba(255,255,255,0.2)'}`,
+                    color: 'white',
+                    borderRadius: '12px',
+                    padding: '0 16px',
+                    fontSize: '18px',
+                    cursor: 'pointer',
+                    animation: isRecording ? 'pulse 1.5s infinite' : 'none'
+                  }}
+                >
+                  {isRecording ? '⏹' : '🎙️'}
+                </button>
+                <button
+                  onClick={kirimKeAi}
+                  disabled={!pesan.trim() && !isRecording}
+                  style={{
+                    background: pesan.trim() ? '#e11d48' : 'rgba(255,255,255,0.1)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '12px',
+                    padding: '0 22px',
+                    fontWeight: 700,
+                    fontSize: '14px',
+                    cursor: pesan.trim() ? 'pointer' : 'not-allowed',
+                    transition: 'background 0.2s',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  Kirim ▶
+                </button>
+              </div>
             </div>
           )}
         </div>

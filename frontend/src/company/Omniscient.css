@@ -1,0 +1,240 @@
+.omniscient-container {
+    display: flex;
+    height: 100%;
+    width: 100%;
+    color: #e0e0e0;
+}
+
+.omniscient-sidebar {
+    width: 250px;
+    background: rgba(15, 15, 15, 0.95);
+    border-right: 1px solid rgba(255, 255, 255, 0.05);
+    display: flex;
+    flex-direction: column;
+    transition: width 0.3s ease;
+}
+
+.omniscient-sidebar.closed {
+    width: 50px;
+}
+
+.omniscient-sidebar.closed .sidebar-filters {
+    display: none;
+}
+
+.sidebar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.sidebar-header h3 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 500;
+}
+
+.toggle-btn {
+    background: transparent;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    font-size: 0.8rem;
+}
+
+.sidebar-filters {
+    display: flex;
+    flex-direction: column;
+    padding: 15px;
+    gap: 8px;
+}
+
+.sidebar-filters button {
+    background: transparent;
+    border: none;
+    color: #aaa;
+    text-align: left;
+    padding: 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.sidebar-filters button:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: #fff;
+}
+
+.sidebar-filters button.active {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    font-weight: 500;
+}
+
+.gitnexus-status {
+    margin-top: auto;
+    padding: 15px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.gitnexus-status h4 {
+    margin: 0 0 10px 0;
+    font-size: 0.85rem;
+    color: #fff;
+}
+
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.75rem;
+    margin-bottom: 10px;
+}
+
+.status-indicator.online::before {
+    content: '';
+    display: block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #4ade80;
+}
+
+.gitnexus-status button {
+    width: 100%;
+    background: #222;
+    color: #fff;
+    border: 1px solid #333;
+    padding: 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+}
+
+.gitnexus-status button:hover {
+    background: #333;
+}
+
+.omniscient-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 30px;
+    overflow-y: auto;
+}
+
+.search-header {
+    margin-bottom: 30px;
+}
+
+.search-header h2 {
+    margin: 0 0 20px 0;
+    font-size: 1.8rem;
+    font-weight: 600;
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.unified-search-bar {
+    display: flex;
+    gap: 10px;
+}
+
+.unified-search-bar input {
+    flex: 1;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 15px 20px;
+    color: #fff;
+    font-size: 1rem;
+    outline: none;
+    transition: all 0.3s;
+}
+
+.unified-search-bar input:focus {
+    border-color: rgba(79, 172, 254, 0.5);
+    box-shadow: 0 0 0 2px rgba(79, 172, 254, 0.1);
+}
+
+.unified-search-bar button {
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    color: #000;
+    border: none;
+    border-radius: 8px;
+    padding: 0 25px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.unified-search-bar button:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+.search-results {
+    flex: 1;
+}
+
+.empty-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #666;
+    font-size: 1.1rem;
+}
+
+.loading-state {
+    text-align: center;
+    padding: 40px;
+    color: #888;
+}
+
+.results-container {
+    display: flex;
+    flex-direction: column;
+    gap: 30px;
+}
+
+.result-section h3 {
+    margin: 0 0 15px 0;
+    font-size: 1.1rem;
+    color: #ccc;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 8px;
+}
+
+.result-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 10px;
+    transition: transform 0.2s, background 0.2s;
+}
+
+.result-card:hover {
+    background: rgba(255, 255, 255, 0.05);
+    transform: translateY(-2px);
+}
+
+.result-card p {
+    margin: 0;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
+
+.result-card small {
+    display: block;
+    margin-top: 10px;
+    color: #888;
+    font-size: 0.8rem;
+}

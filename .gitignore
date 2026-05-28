@@ -33,3 +33,16 @@ token.json
 # OS
 Thumbs.db
 Desktop.ini
+
+# Excluded for exe and secrets
+build_exe.bat
+ai-desktop-app.sln
+desktop/
+dist-electron/
+start_desktop.bat
+mcp-google-calendar-token.json
+gdrive_token.json
+data/mcp_servers.json
+data/chromadb/
+data/chromadb_test/
+data/test_chromadb/

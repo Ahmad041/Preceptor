@@ -4,7 +4,7 @@ import subprocess
 import datetime
 import requests
 import json
-from ddgs import DDGS
+from duckduckgo_search import DDGS
 from bs4 import BeautifulSoup
 import webbrowser
 from google.auth.transport.requests import Request
@@ -95,7 +95,7 @@ def tambah_jadwal_google_calendar(params: str) -> str:
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
 OLLAMA_HEALTH_URL = "http://localhost:11434/api/tags"
-MODEL_NAME = "qwen3.5:4b"
+MODEL_NAME = "qwen3.5:latest"
 
 def ensure_ollama_running():
     """Cek apakah Ollama aktif, jika tidak — coba hidupkan otomatis."""
@@ -595,7 +595,7 @@ Balasan: {{"tool": "tambah_jadwal_google_calendar", "parameter": "Meeting|||{bes
                             "num_predict": 100,
                         }
                     },
-                    timeout=45
+                    timeout=120
                 )
                 response.raise_for_status()
                 break  # sukses, keluar dari retry loop

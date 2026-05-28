@@ -1,18 +1,10 @@
 import { useState } from 'react';
+import SettingsMenu from './SettingsMenu';
 
 export default function MainMenu({ onStart }) {
   const [showModes, setShowModes] = useState(false);
-  const [showForm, setShowForm] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [selectedMode, setSelectedMode] = useState('override');
-  const [nama, setNama] = useState('');
-  const [hubungan, setHubungan] = useState('');
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (nama.trim() && hubungan.trim()) {
-      onStart({ nama, hubungan }, selectedMode);
-    }
-  };
 
   return (
     <div style={{ width: '100%', height: '100vh', overflow: 'hidden', position: 'relative', background: '#fdf2f8' }}>
@@ -81,6 +73,9 @@ export default function MainMenu({ onStart }) {
             {['Load', 'Options', 'Settings'].map(label => (
               <button
                 key={label}
+                onClick={() => {
+                  if (label === 'Settings') setShowSettings(true);
+                }}
                 style={{
                   width: '100%',
                   textAlign: 'left',
@@ -176,10 +171,7 @@ export default function MainMenu({ onStart }) {
                   if (mode.id === 'override' || mode.id === 'story' || mode.id === 'company') {
                     setSelectedMode(mode.id);
                     setShowModes(false);
-                    setShowForm(mode.id === 'override' || mode.id === 'company');
-                    if (mode.id === 'story') {
-                      onStart({ nama: '', hubungan: '' }, 'story');
-                    }
+                    onStart({ nama: '', hubungan: '' }, mode.id);
                   }
                 }}
                 style={{
@@ -227,130 +219,10 @@ export default function MainMenu({ onStart }) {
         </div>
       )}
 
-      {/* Modal Profile Form */}
-      {showForm && (
-        <div
-          onClick={(e) => { if (e.target === e.currentTarget) setShowForm(false); }}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 100,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: 'rgba(0,0,0,0.35)',
-          }}
-        >
-          <div style={{
-            background: 'white',
-            borderRadius: '24px',
-            padding: '36px',
-            width: '400px',
-            boxShadow: '0 25px 60px rgba(0,0,0,0.2)',
-          }}>
-            <h2 style={{ textAlign: 'center', color: '#e11d48', fontSize: '22px', fontWeight: 800, margin: '0 0 8px' }}>
-              Buat Profilmu
-            </h2>
-            <p style={{ textAlign: 'center', color: '#71717a', fontSize: '13px', marginBottom: '28px' }}>
-              Ketahui bagaimana Bocchi akan mengenalmu.
-            </p>
+      {/* Modal Profile Form removed since Settings handles profile globally */}
 
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '10px', fontWeight: 700, color: '#71717a', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '8px' }}>
-                  Nama Panggilan
-                </label>
-                <input
-                  type="text"
-                  autoFocus
-                  required
-                  placeholder="Misal: Senpai"
-                  value={nama}
-                  onChange={e => setNama(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '12px 16px',
-                    borderRadius: '12px',
-                    border: '2px solid #e4e4e7',
-                    fontSize: '14px',
-                    outline: 'none',
-                    boxSizing: 'border-box',
-                    transition: 'border-color 0.2s',
-                  }}
-                  onFocus={e => e.target.style.borderColor = '#f43f5e'}
-                  onBlur={e => e.target.style.borderColor = '#e4e4e7'}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '10px', fontWeight: 700, color: '#71717a', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '8px' }}>
-                  Hubungan Karakter
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Misal: Teman dekat yang baik"
-                  value={hubungan}
-                  onChange={e => setHubungan(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '12px 16px',
-                    borderRadius: '12px',
-                    border: '2px solid #e4e4e7',
-                    fontSize: '14px',
-                    outline: 'none',
-                    boxSizing: 'border-box',
-                    transition: 'border-color 0.2s',
-                  }}
-                  onFocus={e => e.target.style.borderColor = '#f43f5e'}
-                  onBlur={e => e.target.style.borderColor = '#e4e4e7'}
-                />
-              </div>
-
-              <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
-                <button
-                  type="button"
-                  onClick={() => setShowForm(false)}
-                  style={{
-                    flex: 1,
-                    padding: '13px',
-                    borderRadius: '100px',
-                    border: 'none',
-                    background: '#f4f4f5',
-                    color: '#52525b',
-                    fontWeight: 700,
-                    fontSize: '14px',
-                    cursor: 'pointer',
-                    transition: 'background 0.2s',
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.background = '#e4e4e7'}
-                  onMouseLeave={e => e.currentTarget.style.background = '#f4f4f5'}
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={!nama.trim() || !hubungan.trim()}
-                  style={{
-                    flex: 1,
-                    padding: '13px',
-                    borderRadius: '100px',
-                    border: 'none',
-                    background: nama.trim() && hubungan.trim() ? '#e11d48' : '#fda4af',
-                    color: 'white',
-                    fontWeight: 700,
-                    fontSize: '14px',
-                    cursor: nama.trim() && hubungan.trim() ? 'pointer' : 'not-allowed',
-                    transition: 'background 0.2s',
-                  }}
-                >
-                  Mulai ✨
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Settings Modal */}
+      {showSettings && <SettingsMenu onClose={() => setShowSettings(false)} />}
     </div>
   );
 }

@@ -1,0 +1,96 @@
+.calendar-view-container {
+    padding: 24px;
+    height: 100%;
+    color: var(--text-primary);
+    overflow-y: auto;
+}
+
+.calendar-view-container h2 {
+    font-size: 1.5rem;
+    margin-bottom: 24px;
+    letter-spacing: 1px;
+    border-bottom: 1px solid #333;
+    padding-bottom: 12px;
+}
+
+.calendar-error {
+    background: rgba(255, 0, 0, 0.1);
+    border-left: 4px solid red;
+    padding: 16px;
+    border-radius: 4px;
+    margin-bottom: 24px;
+}
+
+.calendar-error .hint {
+    color: #aaa;
+    font-size: 0.9rem;
+    margin-top: 8px;
+}
+
+.events-timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.event-card {
+    display: flex;
+    background: #1a1a2e;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.event-date {
+    background: #ff0055;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 100px;
+}
+
+.event-date .month {
+    text-transform: uppercase;
+    font-weight: bold;
+    font-size: 0.9rem;
+}
+
+.event-date .day {
+    font-size: 2rem;
+    font-weight: 800;
+}
+
+.event-date .time {
+    font-size: 0.8rem;
+    margin-top: 4px;
+}
+
+.event-details {
+    padding: 16px 24px;
+    flex: 1;
+}
+
+.event-details h3 {
+    margin: 0 0 8px 0;
+    font-size: 1.2rem;
+}
+
+.event-details p {
+    color: #ccc;
+    margin: 0 0 8px 0;
+    font-size: 0.9rem;
+}
+
+.location {
+    font-size: 0.8rem;
+    color: #888;
+}
+
+.no-events {
+    text-align: center;
+    padding: 40px;
+    color: #888;
+    font-style: italic;
+}
