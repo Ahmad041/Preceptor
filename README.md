@@ -60,6 +60,11 @@ graph LR
 *   **Advanced Doc Automation**: Membuat draf berkas `.docx` (Laporan, Proposal, Skripsi, Surat resmi) dengan tata letak profesional siap cetak langsung dari hasil percakapan dengan agen spesialis.
 *   **Stock Strategy & Finance Monitor**: Pantau pengeluaran anggaran proyek Kessoku Band dan analisis portofolio saham secara langsung menggunakan integrasi `yfinance` dan evaluasi portofolio otomatis.
 
+### 🔬 6. AI Co-Scientist (R&D Division) & MCP Extensions
+*   **Autonomous Research Loop**: UI divisi R&D di *Company Mode* untuk memantau antrean riset topik kompleks secara otonom tanpa memblokir server utama.
+*   **Long-Term Synthesis**: Mesin pencarian mengagregasi ratusan halaman web, menyintesisnya, dan menyimpan laporan riset permanen di ChromaDB (Sistem Memori).
+*   **MCP Integration**: Dukungan *Model Context Protocol* untuk mengekstensi kemampuan baca basis pengetahuan dan alat eksternal (Pollyhaven, Sketchfab, API internal) ke agen secara modular.
+
 ---
 
 ## 🛠️ Teknologi yang Digunakan
@@ -154,6 +159,8 @@ Akses aplikasi langsung dari browser di alamat `http://localhost:5173`.
 - [x] **Desktop Pilot & Override Mode Panel** kontrol desktop aman dengan gerbang konfirmasi user.
 - [x] **Background Vision Loop** pemahaman konteks layar waktu nyata menggunakan Gemini & OpenRouter.
 - [x] **AlphaEvolve System** siklus optimasi mandiri kode Python secara otonom dengan fitur *hot-module reload*.
+- [x] **AI Co-Scientist (R&D Division)** antrean riset otonom terintegrasi dengan *Company Mode*.
+- [x] **MCP Protocol Extensions** dukungan integrasi Model Context Protocol.
 - [ ] **Migrasi ke Aplikasi Desktop Native** penuh menggunakan pembungkus **Electron + PyInstaller** (Lihat [Rencana Implementasi Electron](file:///C:/Users/ahamd/.gemini/antigravity/brain/647951e5-8939-4a7c-987a-6933958a79f7/implementation_plan.md) untuk detailnya).
 - [ ] **Unified Installer Ringan** yang dibekali manager unduhan model otomatis (*Lazy Download Model UI*).
 

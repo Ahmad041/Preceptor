@@ -7,7 +7,8 @@ export default function SettingsMenu({ onClose }) {
     user_hubungan: '',
     system_prompt: '',
     llm_model: '',
-    tts_model: '',
+    tts_model_chat: '',
+    tts_model_story: '',
     visual_mode: '2D',
     volume: 1.0,
     is_muted: false
@@ -193,16 +194,27 @@ export default function SettingsMenu({ onClose }) {
                 <p style={{ fontSize: '10px', color: '#a1a1aa', margin: '4px 0 0 0' }}>Warning: Changing LLM may cause a slight pause while Ollama preloads it.</p>
               </div>
               <div>
-                <label style={{ fontWeight: 700, fontSize: '14px', color: '#3f3f46', display: 'block', marginBottom: '8px' }}>TTS Model</label>
+                <label style={{ fontWeight: 700, fontSize: '14px', color: '#3f3f46', display: 'block', marginBottom: '8px' }}>TTS Model (Chatting)</label>
                 <select 
-                  value={settings.tts_model} 
-                  onChange={e => setSettings({...settings, tts_model: e.target.value})}
+                  value={settings.tts_model_chat} 
+                  onChange={e => setSettings({...settings, tts_model_chat: e.target.value})}
                   style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '2px solid #e4e4e7' }}
                 >
                   <option value="Qwen/Qwen3-TTS-12Hz-0.6B-Base">Qwen3 0.6B (Fast, Low VRAM)</option>
                   <option value="Qwen/Qwen3-TTS-12Hz-1.7B-Base">Qwen3 1.7B (High Quality, Needs 4GB+ VRAM)</option>
                 </select>
-                <p style={{ fontSize: '10px', color: '#a1a1aa', margin: '4px 0 0 0' }}>To apply TTS changes, app restart might be required currently.</p>
+              </div>
+              <div style={{ marginTop: '16px' }}>
+                <label style={{ fontWeight: 700, fontSize: '14px', color: '#3f3f46', display: 'block', marginBottom: '8px' }}>TTS Model (Story Mode)</label>
+                <select 
+                  value={settings.tts_model_story} 
+                  onChange={e => setSettings({...settings, tts_model_story: e.target.value})}
+                  style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '2px solid #e4e4e7' }}
+                >
+                  <option value="Qwen/Qwen3-TTS-12Hz-0.6B-Base">Qwen3 0.6B (Fast, Low VRAM)</option>
+                  <option value="Qwen/Qwen3-TTS-12Hz-1.7B-Base">Qwen3 1.7B (High Quality, Needs 4GB+ VRAM)</option>
+                </select>
+                <p style={{ fontSize: '10px', color: '#a1a1aa', margin: '4px 0 0 0' }}>Models are automatically hot-swapped dynamically when you switch mode.</p>
               </div>
             </div>
           )}

@@ -77,6 +77,7 @@ Tools yang tersedia:
 - moodle_get_tasks(username, password) — Ambil daftar tugas dari Moodle
 - moodle_download_task(username, password, task_url) — Download lampiran tugas Moodle
 - moodle_upload_draft(username, password, task_url, file_path) — Upload file ke Moodle
+- start_research(topic) — Mulai riset mendalam secara otomatis di background (AI Co-Scientist). Gunakan ini jika ditanya informasi kompleks yang butuh analisis literatur panjang.
 
 Jawab dengan format JSON jika perlu menggunakan tool:
 {"action": "tool_name", "params": {...}, "explanation": "..."}
@@ -126,6 +127,19 @@ class JarvisOrchestrator:
         self._profile_path = os.path.join(os.getcwd(), "data", "bocchi_memory", "profile.json")
         os.makedirs(os.path.dirname(self._profile_path), exist_ok=True)
         self._load_profile()
+        
+        # Setup research loop callback
+        try:
+            from research_loop import research_engine
+            research_engine.set_callback(self._on_research_completed)
+        except ImportError:
+            pass
+
+    def _on_research_completed(self, topic: str, report: str):
+        """Callback ketika background research selesai."""
+        msg = f"[SISTEM] Riset mendalam tentang '{topic}' telah selesai. Hasilnya sudah disimpan di memorimu. Kamu bisa mengingatkan user tentang hal ini."
+        self._update_history(f"User Notification: Research {topic} completed.", msg)
+        print(f"[JARVIS] Notified about completed research: {topic}")
 
     # ============================================================
     # USER PROFILE — dari MainMenu {nama, hubungan}
@@ -333,30 +347,39 @@ class JarvisOrchestrator:
 
                 # If it's a read-only or helper tool that can be executed immediately:
                 else:
-                    tool_map = {
-                        "web_search": "search_web",
-                        "file_read": "read_file",
-                        "shell_exec": "run_terminal",
-                        "get_screen_info": "get_screen_info"
-                    }
-                    agent_tool_name = tool_map.get(action, action)
-                    
-                    param_str = ""
-                    if isinstance(params, dict):
-                        if action == "web_search":
-                            param_str = params.get("query", "")
-                        elif action == "file_read":
-                            param_str = params.get("path", "")
-                        elif action == "shell_exec":
-                            param_str = params.get("command", "")
-                        else:
-                            param_str = json.dumps(params)
+                    if action == "start_research":
+                        try:
+                            from research_loop import research_engine
+                            topic = params.get("topic", "") if isinstance(params, dict) else str(params)
+                            res = research_engine.add_task(topic)
+                            tool_result = f"Berhasil menambahkan topik '{topic}' ke antrean riset. Aku akan memberitahumu saat selesai."
+                        except Exception as e:
+                            tool_result = f"Gagal memulai riset: {e}"
                     else:
-                        param_str = str(params)
-
-                    import agent_tools
-                    tool_result = agent_tools.execute_tool(agent_tool_name, param_str, agent_id="jarvis")
-                    
+                        tool_map = {
+                            "web_search": "search_web",
+                            "file_read": "read_file",
+                            "shell_exec": "run_terminal",
+                            "get_screen_info": "get_screen_info"
+                        }
+                        agent_tool_name = tool_map.get(action, action)
+                        
+                        param_str = ""
+                        if isinstance(params, dict):
+                            if action == "web_search":
+                                param_str = params.get("query", "")
+                            elif action == "file_read":
+                                param_str = params.get("path", "")
+                            elif action == "shell_exec":
+                                param_str = params.get("command", "")
+                            else:
+                                param_str = json.dumps(params)
+                        else:
+                            param_str = str(params)
+    
+                        import agent_tools
+                        tool_result = agent_tools.execute_tool(agent_tool_name, param_str, agent_id="jarvis")
+                        
                     # Feed the result back into the message history for the next round
                     messages.append({"role": "assistant", "content": response})
                     messages.append({

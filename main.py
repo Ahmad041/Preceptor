@@ -42,8 +42,18 @@ import agent_logger
 from memory_system import memory
 from notes_engine import notes_index, build_note_metadata, get_watched_folders, add_watched_folder, remove_watched_folder
 from embedding_engine import embedding_engine
+from desktop_pilot import (
+    desktop_click,
+    desktop_type,
+    desktop_press,
+    desktop_hotkey,
+    desktop_scroll,
+    desktop_screenshot,
+    get_screen_info
+)
 import desktop_pilot
 from vision_loop import vision_engine
+from research_loop import research_engine
 from jarvis_orchestrator import jarvis
 from gitnexus_runner import gitnexus_server
 from omniscient import omniscient
@@ -135,7 +145,8 @@ GLOBAL_SETTINGS = {
     "language": "ID",
     "llm_engine": "Ollama",
     "llm_model": "llama3",
-    "tts_model": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+    "tts_model_chat": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+    "tts_model_story": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
     "vram_gb": 0,
     "system_prompt": "Kamu adalah Hitori Gotou (Bocchi). Kamu pemalu, suka musik, dan sedikit gugup saat bicara.",
     "user_nama": "Senpai",
@@ -189,6 +200,12 @@ async def startup_event():
     
     # 2. Background embedding generation (so startup is not blocked)
     asyncio.create_task(initialize_embeddings())
+    
+    # 3. Start Research Engine (AI Co-Scientist)
+    try:
+        research_engine.start()
+    except Exception as e:
+        print(f"[WARNING] Gagal start Research Engine: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -239,194 +256,63 @@ async def unified_knowledge_search(req: UnifiedSearchRequest):
         return {"status": "error", "message": str(e)}
 
 # ============================================================
-# 1. INISIALISASI QWEN3-TTS (Voice Cloning Mode)
-def check_hardware_and_recommend():
-    import json
-    import os
-    import subprocess
-    
-    spec_file = "spec.json"
-    device_tts = "cpu"
-    vram_gb = 0
-    
-    try:
-        import torch
-        if torch.cuda.is_available():
-            device_tts = "cuda"
-            vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
-    except Exception:
-        pass
-        
-    if os.path.exists(spec_file):
-        try:
-            with open(spec_file, 'r', encoding='utf-8') as f:
-                specs = json.load(f)
-            print(f"\n[SISTEM] Memuat konfigurasi dari {spec_file}...")
-            # update global settings
-            GLOBAL_SETTINGS.update(specs)
-            return GLOBAL_SETTINGS.get("tts_model", "Qwen/Qwen3-TTS-12Hz-0.6B-Base"), device_tts
-        except Exception as e:
-            print(f"[WARNING] Gagal membaca {spec_file}: {e}")
-
-    print("\n" + "="*50)
-    print("🤖 JARVIS HARDWARE DIAGNOSTICS & SETUP")
-    print("="*50)
-    
-    # 1. Tanya Bahasa
-    language = "ID"
-    try:
-        lang_in = input("1. Bahasa apa yang ingin digunakan? (ID/EN/Lainnya) [ID]: ").strip().upper()
-        if lang_in:
-            language = lang_in
-    except (EOFError, KeyboardInterrupt):
-        print("\n[SISTEM] Menggunakan default: ID")
-    
-    # Deteksi GPU Info untuk print
-    try:
-        import torch
-        if torch.cuda.is_available():
-            print(f"\n[Hardware] GPU Terdeteksi: {torch.cuda.get_device_name(0)}")
-            print(f"[Hardware] Total VRAM  : {vram_gb:.1f} GB")
-        else:
-            print("\n[Hardware] GPU CUDA TIDAK terdeteksi. Hanya CPU.")
-    except Exception as e:
-        print(f"\n[Hardware] Gagal mendeteksi GPU: {e}")
-    
-    # 2. Tanya Engine
-    llm_engine = "Ollama"
-    try:
-        engine_in = input("\n2. Gunakan LLM Engine apa? (Ollama / LMStudio / Lainnya) [Ollama]: ").strip()
-        if engine_in:
-            llm_engine = engine_in
-    except (EOFError, KeyboardInterrupt):
-        print("\n[SISTEM] Menggunakan default: Ollama")
-    
-    # 3. LLM Model Rekomendasi vs Tahu
-    llm_model = ""
-    print(f"\n3. Setup Model untuk {llm_engine}")
-    try:
-        tau_gak = input("Sudah tau model yang mau dipakai atau butuh rekomendasi? (Tahu / Rekomendasi) [Rekomendasi]: ").strip().lower()
-        if tau_gak == "tahu":
-            llm_model = input("Masukkan nama model yang ingin digunakan: ").strip()
-        else:
-            print(f"\n[Rekomendasi LLM Berdasarkan VRAM: {vram_gb:.1f} GB]")
-            if vram_gb >= 8:
-                print("💡 Spek Anda: TINGGI (VRAM >= 8GB)\n")
-                print(f"{'Model':<15} | {'Kelebihan':<40} | {'Kekurangan':<35} | {'Kecocokan'}")
-                print("-" * 110)
-                print(f"{'llama3':<15} | {'Paling pintar, bahasa Indo natural.':<40} | {'Butuh RAM besar, bikin panas.':<35} | SANGAT PAS")
-                print(f"{'qwen2.5:7b':<15} | {'Jago koding, respons cepat.':<40} | {'Kadang bingung instruksi campur.':<35} | PAS")
-                print(f"{'gemma:7b':<15} | {'Logika reasoning sangat kuat.':<40} | {'Butuh resource CPU/RAM ekstra.':<35} | CUKUP PAS")
-                print("-" * 110)
-                rek = "llama3"
-            elif vram_gb >= 4:
-                print("💡 Spek Anda: MENENGAH (VRAM 4-7GB)\n")
-                print(f"{'Model':<15} | {'Kelebihan':<40} | {'Kekurangan':<35} | {'Kecocokan'}")
-                print("-" * 110)
-                print(f"{'phi3':<15} | {'Super cepat, pintar, tidak panas.':<40} | {'Kurang jago instruksi rumit.':<35} | SANGAT PAS")
-                print(f"{'qwen2.5:3b':<15} | {'Sangat cerdas untuk ukurannya.':<40} | {'Masih bisa halusinasi.':<35} | PAS")
-                print(f"{'llama3:8b-q4_0':<15} | {'Mendapat kualitas llama3 ori.':<40} | {'Versi kompresi (sedikit bodoh).':<35} | CUKUP PAS")
-                print("-" * 110)
-                rek = "phi3"
-            else:
-                print("💡 Spek Anda: TERBATAS (VRAM < 4GB / Hanya CPU)\n")
-                print(f"{'Model':<15} | {'Kelebihan':<40} | {'Kekurangan':<35} | {'Kecocokan'}")
-                print("-" * 110)
-                print(f"{'qwen2.5:1.5b':<15} | {'Jalan di CPU laptop tua, no lag.':<40} | {'Sering ngawur, Indo kurang.':<35} | PALING PAS")
-                print(f"{'gemma2:2b':<15} | {'Lebih pintar dari qwen 1.5b.':<40} | {'Sedikit lebih lambat di CPU.':<35} | PAS")
-                print(f"{'tinyllama':<15} | {'Sangat sangat ringan (ultrafast).':<40} | {'Kepintaran sangat terbatas.':<35} | CUKUP PAS")
-                print("-" * 110)
-                rek = "qwen2.5:1.5b"
-            
-            pilih_rek = input(f"Pilih model rekomendasi '{rek}'? [Y/n]: ").strip().lower()
-            if pilih_rek == 'n':
-                llm_model = input("Masukkan nama model pilihanmu: ").strip()
-            else:
-                llm_model = rek
-    except (EOFError, KeyboardInterrupt):
-        llm_model = "llama3"
-        print(f"\n[SISTEM] Menggunakan default: {llm_model}")
-
-    # 4. Download Confirmation
-    if llm_engine.lower() == "ollama" and llm_model:
-        try:
-            dl = input(f"\nApakah kamu setuju mendownload/memastikan model '{llm_model}' berjalan di background Ollama? [Y/n]: ").strip().lower()
-            if dl != 'n':
-                print(f"[SISTEM] Mengeksekusi 'ollama run {llm_model}' di background...")
-                # Run async without blocking using Popen
-                subprocess.Popen(["ollama", "run", llm_model], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except (EOFError, KeyboardInterrupt):
-            pass
-
-    # 5. Rekomendasi TTS
-    print("\n4. [Rekomendasi Model TTS]")
-    if vram_gb >= 4:
-        print("💡 Spek Mumpuni: Direkomendasikan Qwen3-TTS 1.7B-Base (High Quality Voice Clone).")
-        tts_model = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
-    else:
-        print("💡 Spek Terbatas: Direkomendasikan Qwen3-TTS 0.6B-Base (Fast & Lightweight).")
-        tts_model = "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
-        
-    try:
-        user_input = input(f"Apakah kamu ingin meload model rekomendasi TTS ({tts_model})? [Y/n]: ").strip().lower()
-        if user_input == 'n':
-            if "1.7B" in tts_model:
-                tts_model = "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
-                print(f"[SISTEM] Fallback ke model {tts_model}")
-            else:
-                tts_model = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
-                print(f"[SISTEM] Memaksa load model {tts_model} (Bisa menyebabkan lag!)")
-    except (EOFError, KeyboardInterrupt):
-        print(f"\n[SISTEM] Input dilewati. Memuat default: {tts_model}")
-    
-    print("="*50)
-    
-    # Save spec.json via global settings
-    GLOBAL_SETTINGS.update({
-        "language": language,
-        "llm_engine": llm_engine,
-        "llm_model": llm_model,
-        "tts_model": tts_model,
-        "vram_gb": vram_gb
-    })
-    try:
-        save_global_settings()
-        print(f"[SISTEM] Konfigurasi berhasil disimpan ke {spec_file}")
-    except Exception as e:
-        print(f"[WARNING] Gagal menyimpan {spec_file}: {e}")
-        
-    return tts_model, device_tts
-
+# 1. INISIALISASI QWEN3-TTS (Voice Cloning Mode) - DYNAMIC SWAPPING
+CURRENT_TTS_MODEL_NAME = None
 QWEN_TTS_MODEL = None
 QWEN_TTS_TOKENIZER = None
 
-try:
-    from qwen_tts import Qwen3TTSModel
+def get_tts_model(mode="chat"):
+    global QWEN_TTS_MODEL, CURRENT_TTS_MODEL_NAME
+    
+    target_model_key = "tts_model_chat" if mode == "chat" else "tts_model_story"
+    target_model = GLOBAL_SETTINGS.get(target_model_key, "Qwen/Qwen3-TTS-12Hz-0.6B-Base")
+    
     import torch
+    device_tts = "cuda" if torch.cuda.is_available() else "cpu"
+    if device_tts == "cuda":
+        GLOBAL_SETTINGS["vram_gb"] = torch.cuda.get_device_properties(0).total_memory / (1024**3)
     
-    selected_model, device_tts = check_hardware_and_recommend()
+    if QWEN_TTS_MODEL is not None and CURRENT_TTS_MODEL_NAME == target_model:
+        return QWEN_TTS_MODEL
+        
+    print(f"\n[SISTEM] TTS Swap: Memuat model untuk {mode.upper()} mode -> {target_model}")
     
-    print(f"\n[SISTEM] Memuat {selected_model}...")
+    if QWEN_TTS_MODEL is not None:
+        print(f"[SISTEM] Mengosongkan VRAM (Unloading {CURRENT_TTS_MODEL_NAME})...")
+        del QWEN_TTS_MODEL
+        import gc
+        gc.collect()
+        if device_tts == "cuda":
+            torch.cuda.empty_cache()
+            
+    print(f"[SISTEM] Memuat {target_model} ke {device_tts.upper()}...")
     try:
-        QWEN_TTS_MODEL = Qwen3TTSModel.from_pretrained(
-            selected_model,
-            device_map=device_tts,
-            torch_dtype=torch.bfloat16,
-            attn_implementation="sdpa",
-        )
-        print(f"[SISTEM] [OK] Qwen3-TTS berhasil dimuat dengan SDPA di {device_tts.upper()}!")
-    except Exception as e:
-        print(f"[WARNING] Gagal memuat Qwen3-TTS dengan SDPA: {e}")
-        print("[SISTEM] Mencoba tanpa SDPA...")
-        QWEN_TTS_MODEL = Qwen3TTSModel.from_pretrained(
-            selected_model,
-            device_map=device_tts,
-            torch_dtype=torch.bfloat16,
-        )
-        print(f"[SISTEM] [OK] Qwen3-TTS berhasil dimuat di {device_tts.upper()} (tanpa SDPA)!")
-except Exception as e2:
-    print(f"[WARNING] Gagal memuat Qwen3-TTS: {e2}")
-    QWEN_TTS_MODEL = None
+        from qwen_tts import Qwen3TTSModel
+        try:
+            QWEN_TTS_MODEL = Qwen3TTSModel.from_pretrained(
+                target_model,
+                device_map=device_tts,
+                torch_dtype=torch.bfloat16,
+                attn_implementation="sdpa",
+            )
+            print(f"[SISTEM] [OK] Qwen3-TTS berhasil dimuat dengan SDPA di {device_tts.upper()}!")
+        except Exception as e:
+            print(f"[WARNING] Gagal memuat Qwen3-TTS dengan SDPA: {e}")
+            print("[SISTEM] Mencoba tanpa SDPA...")
+            QWEN_TTS_MODEL = Qwen3TTSModel.from_pretrained(
+                target_model,
+                device_map=device_tts,
+                torch_dtype=torch.bfloat16,
+            )
+            print(f"[SISTEM] [OK] Qwen3-TTS berhasil dimuat di {device_tts.upper()} (tanpa SDPA)!")
+            
+        CURRENT_TTS_MODEL_NAME = target_model
+    except Exception as e2:
+        print(f"[WARNING] Gagal memuat Qwen3-TTS: {e2}")
+        QWEN_TTS_MODEL = None
+        CURRENT_TTS_MODEL_NAME = None
+        
+    return QWEN_TTS_MODEL
 
 # Mapping emosi → instruksi suara Qwen3-TTS
 EMOSI_INSTRUKSI = {
@@ -852,7 +738,7 @@ async def get_settings():
     return GLOBAL_SETTINGS
 
 @app.post("/api/settings/update")
-async def update_settings(req: Request):
+async def update_settings(req: FastAPIRequest):
     try:
         data = await req.json()
         
@@ -1221,7 +1107,8 @@ async def chat_dengan_ai(data: PesanMasuk):
         kaset_base64 = None
         suara_hasil = "rekaman_final.wav"
         
-        if QWEN_TTS_MODEL and QWEN_TTS_MODEL != "fallback":
+        tts_engine = get_tts_model("chat")
+        if tts_engine and tts_engine != "fallback":
             try:
                 print(f"[PROSES] Qwen3-TTS membuat suara ({emosi_terdeteksi})...")
 
@@ -1234,7 +1121,7 @@ async def chat_dengan_ai(data: PesanMasuk):
                 print("[PROSES] Sedang mensintesis suara Qwen3-TTS... Mohon tunggu (membutuhkan beberapa detik)...", flush=True)
                 # Sanitize text: strip emoji that crash Windows encoding
                 teks_untuk_tts = sanitize_for_tts(teks_jawaban)
-                wavs, sample_rate = QWEN_TTS_MODEL.generate_voice_clone(
+                wavs, sample_rate = tts_engine.generate_voice_clone(
                     text=teks_untuk_tts,
                     ref_audio=ref_audio,
                     x_vector_only_mode=True,
@@ -1617,10 +1504,11 @@ async def generate_story(
             for i, scene in enumerate(final_scenes):
                 try:
                     teks_dialog = scene.get("dialog", "")
-                    if teks_dialog and QWEN_TTS_MODEL and QWEN_TTS_MODEL != "fallback":
+                    tts_engine = get_tts_model("story")
+                    if teks_dialog and tts_engine and tts_engine != "fallback":
                         print(f"  -> Generating audio {i+1}/{len(final_scenes)}...")
                         ref_audio = REFERENSI_SUARA if os.path.exists(REFERENSI_SUARA) else None
-                        wavs, sample_rate = QWEN_TTS_MODEL.generate_voice_clone(
+                        wavs, sample_rate = tts_engine.generate_voice_clone(
                             text=teks_dialog,
                             ref_audio=ref_audio,
                             x_vector_only_mode=True,
@@ -1809,14 +1697,15 @@ async def story_tts(data: dict):
         teks = data.get("dialog", "")
         emosi = data.get("emosi", "Neutral")
         
-        if not teks or not QWEN_TTS_MODEL or QWEN_TTS_MODEL == "fallback":
+        tts_engine = get_tts_model("story")
+        if not teks or not tts_engine or tts_engine == "fallback":
             return {"audio_base64": None}
         
         print(f"[STORY TTS] Generating audio ({emosi})...")
         
         ref_audio = REFERENSI_SUARA if os.path.exists(REFERENSI_SUARA) else None
         
-        wavs, sample_rate = QWEN_TTS_MODEL.generate_voice_clone(
+        wavs, sample_rate = tts_engine.generate_voice_clone(
             text=teks,
             ref_audio=ref_audio,
             x_vector_only_mode=True,
@@ -2893,6 +2782,48 @@ async def save_tasks(data: TaskList):
         return {"status": "ok"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/tools")
+def get_tools_list():
+    from agent_tools import AGENT_TOOLS
+    tools = []
+    for t_name, t_func in AGENT_TOOLS.items():
+        tools.append({
+            "name": t_name,
+            "description": t_func.__doc__ or "Tidak ada deskripsi"
+        })
+    return {"tools": tools}
+
+# =====================================================================
+# AI CO-SCIENTIST / RESEARCH LOOP ENDPOINTS
+# =====================================================================
+
+class ResearchRequest(BaseModel):
+    topic: str
+
+@app.post("/api/research/start")
+def start_research(req: ResearchRequest):
+    res = research_engine.add_task(req.topic)
+    return res
+
+@app.get("/api/research/status")
+def get_research_status():
+    return research_engine.get_status()
+
+@app.get("/api/research/reports")
+def get_research_reports():
+    all_memories = memory.get_all_memories_with_ids()
+    # Filter only memories that start with "Riset:"
+    reports = [m for m in all_memories if m.get("name", "").startswith("Riset:")]
+    return {"reports": reports}
+
+@app.delete("/api/research/reports/{report_id}")
+def delete_research_report(report_id: str):
+    success = memory.delete_memory_by_id(report_id)
+    if success:
+        return {"status": "success", "message": "Report deleted"}
+    else:
+        raise HTTPException(status_code=404, detail="Report not found")
 
 # ============================================================
 # MCP ENDPOINTS (CLIENT & SERVER)

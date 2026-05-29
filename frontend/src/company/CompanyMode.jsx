@@ -12,6 +12,7 @@ import TasksView from './TasksView';
 import ContentView from './ContentView';
 import CalendarView from './CalendarView';
 import ProjectsView from './ProjectsView';
+import RnDView from './RnDView';
 import './CompanyMode.css';
 
 const CompanyMode = ({ onBack }) => {
@@ -88,6 +89,7 @@ const CompanyMode = ({ onBack }) => {
         { id: 'content', label: 'Content', icon: '🎨' },
         { id: 'calendar', label: 'Jadwal', icon: '📅' },
         { id: 'projects', label: 'Projects', icon: '🚀' },
+        { id: 'rnd', label: 'R&D', icon: '🔬' },
         { id: 'omniscient', label: 'Omniscient', icon: '🧠' },
         { id: 'docs', label: 'Docs', icon: '📄' },
         { id: 'team', label: 'Team', icon: '👥' },
@@ -217,8 +219,9 @@ const CompanyMode = ({ onBack }) => {
                     {activeTab === 'content' && <ContentView />}
                     {activeTab === 'calendar' && <CalendarView />}
                     {activeTab === 'projects' && <ProjectsView />}
+                    {activeTab === 'rnd' && <RnDView />}
 
-                    {activeTab !== 'visual' && activeTab !== 'team' && activeTab !== 'docs' && activeTab !== 'cortex' && activeTab !== 'omniscient' && activeTab !== 'tasks' && activeTab !== 'content' && activeTab !== 'calendar' && activeTab !== 'projects' && (
+                    {activeTab !== 'visual' && activeTab !== 'team' && activeTab !== 'docs' && activeTab !== 'cortex' && activeTab !== 'omniscient' && activeTab !== 'tasks' && activeTab !== 'content' && activeTab !== 'calendar' && activeTab !== 'projects' && activeTab !== 'rnd' && (
                         <div className="coming-soon">
                             <div className="glitch-text" data-text="SYSTEM_UNDER_DEVELOPMENT">SYSTEM_UNDER_DEVELOPMENT</div>
                             <p>This module is currently being calibrated by the Software Team.</p>

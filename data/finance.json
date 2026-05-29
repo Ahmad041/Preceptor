@@ -1,6 +1,6 @@
 {
   "total_budget": 1000000,
-  "spent": 4106.200000000001,
+  "spent": 4144.000000000001,
   "currency": "Kessoku Points",
   "agents": {
     "soft": {
@@ -9,8 +9,8 @@
       "name": "Hitori Gotoh"
     },
     "docs": {
-      "tokens": 27851,
-      "kessoku": 2785.1000000000004,
+      "tokens": 28229,
+      "kessoku": 2822.9000000000005,
       "name": "Ryo Yamada"
     },
     "scout": {
@@ -248,6 +248,18 @@
       "agent_id": "docs",
       "tokens": 118,
       "cost": 11.8
+    },
+    {
+      "timestamp": "2026-05-29T07:55:13.214271",
+      "agent_id": "docs",
+      "tokens": 68,
+      "cost": 6.8
+    },
+    {
+      "timestamp": "2026-05-29T07:57:58.179910",
+      "agent_id": "docs",
+      "tokens": 310,
+      "cost": 31.0
     }
   ]
 }
