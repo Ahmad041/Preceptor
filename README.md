@@ -10,19 +10,19 @@ Preceptor dirancang menggunakan sistem multi-agen cerdas (*PentAGI-style*) di ma
 
 ```mermaid
 graph TD
-    User([Permintaan Pengguna]) --> Planner[Orchestrator PentAGI Planner]
+    User(["Permintaan Pengguna"]) --> Planner["Orchestrator PentAGI Planner"]
     
     subgraph Kessoku Band Agents
-        Planner --> Scout[Kikuri Hiroi <br/>🔍 Scout Agent: Web Research & Tools]
-        Planner --> Evolve[Hitori 'Alpha' Gotoh <br/>🧬 Evolve Agent: Self-Evolution & Code Optimization]
-        Planner --> Docs[Ryo Yamada <br/>📄 Docs Agent: Styled Document Builder]
-        Planner --> Soft[Hitori Gotoh <br/>💬 Soft Agent: Interaction & Persona]
-        Planner --> Analyst[Nijika Ichiji <br/>📊 Analyst Agent: Finance & Strategy]
+        Planner --> Scout["Kikuri Hiroi <br/>🔍 Scout Agent: Web Research & Tools"]
+        Planner --> Evolve["Hitori 'Alpha' Gotoh <br/>🧬 Evolve Agent: Self-Evolution & Code Optimization"]
+        Planner --> Docs["Ryo Yamada <br/>📄 Docs Agent: Styled Document Builder"]
+        Planner --> Soft["Hitori Gotoh <br/>💬 Soft Agent: Interaction & Persona"]
+        Planner --> Analyst["Nijika Ichiji <br/>📊 Analyst Agent: Finance & Strategy"]
     end
     
-    Scout --> OS[OS Tools & Web Search]
-    Evolve --> Executor[Python Sandbox & Hot-Reload Module]
-    Docs --> DocBuilder[docx_tools & output_docs]
+    Scout --> OS["OS Tools & Web Search"]
+    Evolve --> Executor["Python Sandbox & Hot-Reload Module"]
+    Docs --> DocBuilder["docx_tools & output_docs"]
 ```
 
 ---
@@ -48,11 +48,11 @@ graph TD
 
 ```mermaid
 graph LR
-    Hypothesize[1. HYPOTHESIZE<br/>Analisis bottleneck/kode] --> Generate[2. GENERATE<br/>Tulis alternatif optimasi]
-    Generate --> Execute[3. EXECUTE<br/>Jalankan benchmark di sandbox]
-    Execute --> Evaluate[4. EVALUATE<br/>Bandingkan performa waktu nyata]
-    Evaluate --> Evolve[5. EVOLVE<br/>Ganti kode & panggil reload_module]
-    Evolve -->|Gagal / Refine| Hypothesize
+    Hypothesize["1. HYPOTHESIZE<br/>Analisis bottleneck/kode"] --> Generate["2. GENERATE<br/>Tulis alternatif optimasi"]
+    Generate --> Execute["3. EXECUTE<br/>Jalankan benchmark di sandbox"]
+    Execute --> Evaluate["4. EVALUATE<br/>Bandingkan performa waktu nyata"]
+    Evaluate --> Evolve["5. EVOLVE<br/>Ganti kode & panggil reload_module"]
+    Evolve -->|"Gagal / Refine"| Hypothesize
 ```
 
 ### 💼 5. Advanced Corporate Tools & Automation
