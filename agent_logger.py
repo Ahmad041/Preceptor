@@ -35,6 +35,9 @@ _agent_command_counts = defaultdict(lambda: deque(maxlen=20))
 # Active focus modes per agent: { "agent_id": ["academic", "reddit"] }
 _agent_focus_modes = defaultdict(list)
 
+# Delegation logs: tracks inter-agent task delegations (Swarm)
+_delegation_logs = deque(maxlen=50)
+
 # Lock untuk thread safety
 _lock = threading.Lock()
 
@@ -202,6 +205,42 @@ def get_activity_level(agent_id: str) -> list:
             bars.append(min(1.0, 0.8 + count * 0.05))
     
     return bars
+
+
+# ============================================================
+# DELEGATION TRACKING (Swarm System)
+# ============================================================
+
+def log_delegation(from_agent: str, to_agent: str, instruction: str, result_preview: str = ""):
+    """
+    Catat delegasi tugas antar-agen (Swarm).
+    
+    from_agent: agen pengirim (misal "brain")
+    to_agent: agen penerima (misal "coder")
+    instruction: instruksi yang dikirim
+    result_preview: preview singkat hasil (max 200 chars)
+    """
+    with _lock:
+        entry = {
+            "timestamp": datetime.now().strftime("%H:%M:%S"),
+            "from": from_agent,
+            "to": to_agent,
+            "instruction": instruction[:200],
+            "result_preview": result_preview[:200] if result_preview else "",
+            "status": "completed" if result_preview else "pending"
+        }
+        _delegation_logs.append(entry)
+    
+    # Also log as activity for both agents
+    log_activity(from_agent, f"Delegated to {to_agent}: {instruction[:80]}...", "tool")
+    if result_preview:
+        log_activity(to_agent, f"Completed task from {from_agent}: {result_preview[:80]}...", "success")
+
+
+def get_delegation_logs(limit: int = 20) -> list:
+    """Get recent delegation logs."""
+    with _lock:
+        return list(_delegation_logs)[-limit:]
 
 
 # ============================================================

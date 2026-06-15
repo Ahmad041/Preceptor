@@ -482,3 +482,20 @@
     height: 2px;
     background: #fff;
 }
+
+/* Custom Floating Sidebar Utility Styles */
+.no-scrollbar::-webkit-scrollbar {
+    display: none !important;
+}
+.no-scrollbar {
+    -ms-overflow-style: none !important;
+    scrollbar-width: none !important;
+}
+
+/* Glassmorphism sidebar adjustments */
+aside.backdrop-blur-xl {
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+}
+

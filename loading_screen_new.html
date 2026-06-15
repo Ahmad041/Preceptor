@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Bocchi AI - Initializing</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;700&amp;family=Be+Vietnam+Pro:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-error-container": "#68001f",
+                        "error": "#ac3149",
+                        "tertiary-fixed-dim": "#f0be74",
+                        "tertiary-container": "#ffcc80",
+                        "primary-container": "#ffa8c4",
+                        "surface": "#fef8fa",
+                        "secondary": "#7f4b8a",
+                        "inverse-surface": "#0f0e0f",
+                        "primary-fixed-dim": "#fb94b7",
+                        "on-secondary-container": "#713e7c",
+                        "primary-dim": "#883756",
+                        "secondary-fixed": "#fdd6ff",
+                        "outline": "#7e797d",
+                        "surface-container-highest": "#e7e1e4",
+                        "error-dim": "#770326",
+                        "on-primary-fixed-variant": "#772948",
+                        "primary": "#974362",
+                        "on-surface": "#343135",
+                        "surface-dim": "#dfd8dc",
+                        "error-container": "#f76a80",
+                        "on-tertiary-fixed": "#4b3100",
+                        "on-tertiary": "#fff8f2",
+                        "surface-variant": "#e7e1e4",
+                        "inverse-primary": "#fe97b9",
+                        "surface-container-low": "#f8f2f4",
+                        "on-primary-container": "#6c203f",
+                        "surface-tint": "#974362",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary-fixed": "#ffcc80",
+                        "on-primary": "#fff7f7",
+                        "secondary-fixed-dim": "#f8c3ff",
+                        "inverse-on-surface": "#a09c9e",
+                        "surface-bright": "#fef8fa",
+                        "on-secondary": "#fff7fb",
+                        "on-surface-variant": "#625e61",
+                        "outline-variant": "#b6b0b4",
+                        "primary-fixed": "#ffa8c4",
+                        "on-primary-fixed": "#51092a",
+                        "on-secondary-fixed-variant": "#7b4886",
+                        "on-secondary-fixed": "#5c2b68",
+                        "surface-container": "#f3ecef",
+                        "on-background": "#343135",
+                        "on-tertiary-container": "#644200",
+                        "on-tertiary-fixed-variant": "#6f4c09",
+                        "secondary-dim": "#723f7d",
+                        "tertiary": "#7d5817",
+                        "on-error": "#fff7f7",
+                        "background": "#fef8fa",
+                        "secondary-container": "#fdd6ff",
+                        "tertiary-dim": "#704c0a",
+                        "surface-container-high": "#ede6ea"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                    "fontFamily": {
+                        "headline": ["Plus Jakarta Sans"],
+                        "display": ["Plus Jakarta Sans"],
+                        "body": ["Be Vietnam Pro"],
+                        "label": ["Plus Jakarta Sans"]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .pulse-ring {
+            animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 0.8; }
+            100% { transform: scale(1.5); opacity: 0; }
+        }
+        .text-flicker {
+            animation: flicker 4s linear infinite;
+        }
+        @keyframes flicker {
+            0%, 19.999%, 22%, 62.999%, 64%, 64.999%, 70%, 100% { opacity: 1; }
+            20%, 21.999%, 63%, 63.999%, 65%, 69.999% { opacity: 0.4; }
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface font-body overflow-hidden h-screen w-screen relative">
+<!-- Background Shader -->
+
+<!-- Content Overlay -->
+<div class="absolute inset-0 z-10 flex flex-col items-center justify-center bg-surface/30 backdrop-blur-3xl">
+<!-- Central AI Core -->
+<div class="relative flex items-center justify-center w-64 h-64 mb-12">
+<!-- Pulsing Rings -->
+<div class="absolute inset-0 rounded-full border border-primary-container pulse-ring opacity-50"></div>
+<div class="absolute inset-4 rounded-full border border-primary pulse-ring" style="animation-delay: 0.5s;"></div>
+<!-- Core Sphere -->
+<div class="w-32 h-32 rounded-full bg-gradient-to-br from-primary to-primary-container shadow-[0_0_48px_rgba(151,67,98,0.4)] flex items-center justify-center relative z-20">
+<span class="material-symbols-outlined text-on-primary text-6xl animate-pulse" style="font-variation-settings: 'FILL' 1;">
+                    all_inclusive
+                </span>
+</div>
+<!-- Orbital Elements -->
+<div class="absolute inset-0 animate-[spin_10s_linear_infinite]">
+<div class="w-4 h-4 rounded-full bg-primary-fixed absolute top-0 left-1/2 -translate-x-1/2 shadow-[0_0_12px_rgba(255,168,196,0.8)]"></div>
+</div>
+</div>
+<!-- Status Text -->
+<div class="flex flex-col items-center space-y-4">
+<h1 class="font-display text-primary text-3xl md:text-4xl font-bold tracking-tight text-flicker">
+                Bocchi AI
+            </h1>
+<div class="bg-surface-container-low/60 backdrop-blur-md px-6 py-3 rounded-full border border-outline-variant/20 shadow-lg shadow-primary-dim/5">
+<p class="font-label text-on-surface-variant text-sm uppercase tracking-widest font-medium" id="loading-text">
+                    Initializing AI Core...
+                </p>
+</div>
+<!-- Progress Bar -->
+<div class="w-64 h-1 mt-6 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-gradient-to-r from-primary-container to-primary w-1/3 rounded-full animate-[pulse_2s_ease-in-out_infinite]" id="progress-bar"></div>
+</div>
+</div>
+</div>
+<!-- System Status Bottom Right -->
+<div class="absolute bottom-8 right-8 z-20 flex items-center gap-3 bg-surface-container-lowest/40 backdrop-blur-xl px-4 py-2 rounded-lg border border-outline-variant/10 shadow-[0_8px_32px_0_rgba(151,67,98,0.04)] text-flicker">
+<div class="w-2 h-2 rounded-full bg-primary animate-ping"></div>
+<div class="flex flex-col">
+<span class="font-label text-[10px] text-on-surface-variant uppercase tracking-widest">SYSTEM_STATUS</span>
+<span class="font-body text-xs text-primary font-medium">Booting Sequence</span>
+</div>
+</div>
+<!-- Decorative Corner Elements -->
+<div class="absolute top-8 left-8 z-20 opacity-30">
+<svg fill="none" height="40" viewbox="0 0 40 40" width="40" xmlns="http://www.w3.org/2000/svg">
+<path class="text-primary" d="M0 0H10V2H2V10H0V0Z" fill="currentColor"></path>
+</svg>
+</div>
+<div class="absolute top-8 right-8 z-20 opacity-30">
+<svg fill="none" height="40" viewbox="0 0 40 40" width="40" xmlns="http://www.w3.org/2000/svg">
+<path class="text-primary" d="M40 0H30V2H38V10H40V0Z" fill="currentColor"></path>
+</svg>
+</div>
+<div class="absolute bottom-8 left-8 z-20 opacity-30">
+<svg fill="none" height="40" viewbox="0 0 40 40" width="40" xmlns="http://www.w3.org/2000/svg">
+<path class="text-primary" d="M0 40H10V38H2V30H0V40Z" fill="currentColor"></path>
+</svg>
+</div>
+<script>
+        // Simulate dynamic loading text
+        const loadingTexts = [
+            "Initializing AI Core...",
+            "Syncing Neural Pathways...",
+            "Loading Aesthetic Matrices...",
+            "Calibrating Emotional Subroutines...",
+            "Establishing Connection..."
+        ];
+        
+        let textIndex = 0;
+        const textElement = document.getElementById('loading-text');
+        const progressBar = document.getElementById('progress-bar');
+        
+        setInterval(() => {
+            textIndex = (textIndex + 1) % loadingTexts.length;
+            
+            // Fade out
+            textElement.style.opacity = 0;
+            
+            setTimeout(() => {
+                textElement.innerText = loadingTexts[textIndex];
+                // Fade in
+                textElement.style.opacity = 1;
+                textElement.style.transition = "opacity 0.5s ease";
+            }, 500);
+            
+            // Randomize progress bar width slightly for effect
+            const newWidth = Math.min(100, Math.max(20, parseInt(progressBar.style.width || 33) + (Math.random() * 20 - 5)));
+            progressBar.style.width = `${newWidth}%`;
+            progressBar.style.transition = "width 1s ease-in-out";
+            
+        }, 3000);
+    </script>
+</body></html>

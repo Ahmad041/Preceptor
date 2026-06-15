@@ -109,3 +109,185 @@ code {
   padding: 4px 8px;
   background: var(--code-bg);
 }
+
+@theme {
+  --color-on-secondary-fixed-variant: #3a4665;
+  --color-secondary-fixed-dim: #bac6eb;
+  --color-on-surface: #e2e2e2;
+  --color-background: #121414;
+  --color-tertiary-fixed: #e2dfff;
+  --color-primary: #c3c6d7;
+  --color-surface-container-lowest: #0c0f0f;
+  --color-on-tertiary: #1d00a5;
+  --color-on-primary-fixed: #171b28;
+  --color-primary-fixed-dim: #c3c6d7;
+  --color-surface: #121414;
+  --color-surface-container-highest: #333535;
+  --color-on-primary-fixed-variant: #434654;
+  --color-primary-fixed: #dfe2f3;
+  --color-on-error-container: #ffdad6;
+  --color-surface-container-low: #1a1c1c;
+  --color-secondary-fixed: #dae2ff;
+  --color-secondary-container: #3a4665;
+  --color-error: #ffb4ab;
+  --color-on-tertiary-fixed: #0f0069;
+  --color-on-primary-container: #777b8a;
+  --color-on-secondary-fixed: #0e1b37;
+  --color-inverse-on-surface: #2f3131;
+  --color-surface-container: #1e2020;
+  --color-on-tertiary-container: #6c66ff;
+  --color-secondary: #bac6eb;
+  --color-tertiary-container: #060044;
+  --color-tertiary-fixed-dim: #c3c0ff;
+  --color-on-surface-variant: #c7c6cc;
+  --color-tertiary: #c3c0ff;
+  --color-on-background: #e2e2e2;
+  --color-surface-tint: #c3c6d7;
+  --color-surface-container-high: #282a2b;
+  --color-surface-variant: #333535;
+  --color-on-secondary-container: #a9b4d9;
+  --color-outline: #909096;
+  --color-inverse-surface: #e2e2e2;
+  --color-inverse-primary: #5a5e6d;
+  --color-error-container: #93000a;
+  --color-outline-variant: #46464c;
+  --color-surface-dim: #121414;
+  --color-surface-bright: #37393a;
+  --color-primary-container: #0a0e1a;
+  --color-on-primary: #2c303d;
+  --color-on-error: #690005;
+  --color-on-tertiary-fixed-variant: #3323cc;
+  --color-on-secondary: #24304d;
+
+  --spacing-unit: 8px;
+  --spacing-gutter: 32px;
+  --spacing-indent-offset: 24px;
+  --spacing-container-margin: 64px;
+  --spacing-section-gap: 120px;
+}
+
+/* Company Mode Neo-Noir Variables & Utils */
+.scanlines {
+    background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0,0,0,0.1) 50%, rgba(0,0,0,0.1));
+    background-size: 100% 4px;
+    pointer-events: none;
+    z-index: 50;
+}
+
+.hud-bracket {
+    position: relative;
+}
+.hud-bracket::before, .hud-bracket::after {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--color-primary);
+    opacity: 0.5;
+    transition: all 0.3s ease;
+}
+.hud-bracket::before {
+    top: 0;
+    left: 0;
+    border-right: none;
+    border-bottom: none;
+}
+.hud-bracket::after {
+    bottom: 0;
+    right: 0;
+    border-left: none;
+    border-top: none;
+}
+.hud-bracket.active::before, .hud-bracket.active::after {
+    opacity: 1;
+    border-color: var(--color-on-tertiary-container);
+    box-shadow: 0 0 10px var(--color-on-tertiary-container);
+}
+
+.glitch-hover:hover {
+    animation: glitch-anim 0.2s cubic-bezier(.25, .46, .45, .94) both infinite;
+    text-shadow: 2px 0 var(--color-on-tertiary-container), -2px 0 var(--color-error);
+}
+@keyframes glitch-anim {
+    0% { transform: translate(0) }
+    20% { transform: translate(-2px, 1px) }
+    40% { transform: translate(-2px, -1px) }
+    60% { transform: translate(2px, 1px) }
+    80% { transform: translate(2px, -1px) }
+    100% { transform: translate(0) }
+}
+
+/* Boot Theme Variables */
+.boot-theme {
+  --color-on-error-container: #68001f;
+  --color-error: #ac3149;
+  --color-tertiary-fixed-dim: #f0be74;
+  --color-tertiary-container: #ffcc80;
+  --color-primary-container: #ffa8c4;
+  --color-surface: #fef8fa;
+  --color-secondary: #7f4b8a;
+  --color-inverse-surface: #0f0e0f;
+  --color-primary-fixed-dim: #fb94b7;
+  --color-on-secondary-container: #713e7c;
+  --color-primary-dim: #883756;
+  --color-secondary-fixed: #fdd6ff;
+  --color-outline: #7e797d;
+  --color-surface-container-highest: #e7e1e4;
+  --color-error-dim: #770326;
+  --color-on-primary-fixed-variant: #772948;
+  --color-primary: #974362;
+  --color-on-surface: #343135;
+  --color-surface-dim: #dfd8dc;
+  --color-error-container: #f76a80;
+  --color-on-tertiary-fixed: #4b3100;
+  --color-on-tertiary: #fff8f2;
+  --color-surface-variant: #e7e1e4;
+  --color-inverse-primary: #fe97b9;
+  --color-surface-container-low: #f8f2f4;
+  --color-on-primary-container: #6c203f;
+  --color-surface-tint: #974362;
+  --color-surface-container-lowest: #ffffff;
+  --color-tertiary-fixed: #ffcc80;
+  --color-on-primary: #fff7f7;
+  --color-secondary-fixed-dim: #f8c3ff;
+  --color-inverse-on-surface: #a09c9e;
+  --color-surface-bright: #fef8fa;
+  --color-on-secondary: #fff7fb;
+  --color-on-surface-variant: #625e61;
+  --color-outline-variant: #b6b0b4;
+  --color-primary-fixed: #ffa8c4;
+  --color-on-primary-fixed: #51092a;
+  --color-on-secondary-fixed-variant: #7b4886;
+  --color-on-secondary-fixed: #5c2b68;
+  --color-surface-container: #f3ecef;
+  --color-on-background: #343135;
+  --color-on-tertiary-container: #644200;
+  --color-on-tertiary-fixed-variant: #6f4c09;
+  --color-secondary-dim: #723f7d;
+  --color-tertiary: #7d5817;
+  --color-on-error: #fff7f7;
+  --color-background: #fef8fa;
+  --color-secondary-container: #fdd6ff;
+  --color-tertiary-dim: #704c0a;
+  --color-surface-container-high: #ede6ea;
+
+  --font-headline: "Plus Jakarta Sans", sans-serif;
+  --font-display: "Plus Jakarta Sans", sans-serif;
+  --font-body: "Be Vietnam Pro", sans-serif;
+  --font-label: "Plus Jakarta Sans", sans-serif;
+}
+
+.boot-theme .pulse-ring {
+    animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+@keyframes pulse-ring {
+    0% { transform: scale(0.8); opacity: 0.8; }
+    100% { transform: scale(1.5); opacity: 0; }
+}
+.boot-theme .text-flicker {
+    animation: flicker 4s linear infinite;
+}
+@keyframes flicker {
+    0%, 19.999%, 22%, 62.999%, 64%, 64.999%, 70%, 100% { opacity: 1; }
+    20%, 21.999%, 63%, 63.999%, 65%, 69.999% { opacity: 0.4; }
+}

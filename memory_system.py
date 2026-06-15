@@ -290,7 +290,7 @@ class MemorySystem:
         if self._chroma_available and self._chroma_client:
             try:
                 self._chroma_client.delete_collection("bocchi_ltm")
-                embed_fn = OllamaEmbeddingFunction()
+                embed_fn = _make_ollama_embedding_function()
                 self._chroma_collection = self._chroma_client.get_or_create_collection(
                     name="bocchi_ltm",
                     embedding_function=embed_fn,
@@ -309,12 +309,112 @@ class MemorySystem:
             print(f"[MEMORY] Gagal kosongkan JSON: {e}")
 
     def save_chat_memory(self, user_text: str, agent_text: str):
-        """Simpan percakapan sebagai memori jangka panjang."""
+        """Simpan percakapan sebagai memori jangka panjang + update topic graph."""
         mem_text = f"Pernah terjadi percakapan ini:\nUser: {user_text}\nBocchi: {agent_text}"
         print(f"[MEMORI] Merajut ingatan ke dalam otak...")
         emb = self.create_embedding([mem_text])
         if emb:
             self.add_to_long_term_memory("Memori Obrolan", mem_text, emb[0])
+        
+        # Update topic graph
+        self._update_topic_graph(user_text, agent_text)
+
+    # ============================================================
+    # TOPIC GRAPH MEMORY
+    # ============================================================
+
+    TOPIC_GRAPH_FILE = os.path.join("data", "topic_graph.json")
+
+    def _load_topic_graph(self) -> Dict[str, List[str]]:
+        """Load topic graph dari disk."""
+        try:
+            if os.path.exists(self.TOPIC_GRAPH_FILE):
+                with open(self.TOPIC_GRAPH_FILE, "r", encoding="utf-8") as f:
+                    return json.load(f)
+        except Exception as e:
+            print(f"[GRAPH] Error loading topic graph: {e}")
+        return {}
+
+    def _save_topic_graph(self, graph: Dict[str, List[str]]):
+        """Simpan topic graph ke disk."""
+        try:
+            os.makedirs(os.path.dirname(self.TOPIC_GRAPH_FILE), exist_ok=True)
+            with open(self.TOPIC_GRAPH_FILE, "w", encoding="utf-8") as f:
+                json.dump(graph, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"[GRAPH] Error saving topic graph: {e}")
+
+    def _extract_topics(self, text: str) -> List[str]:
+        """Extract keyword topics dari teks percakapan (lightweight, no LLM)."""
+        import re
+        # Lowercase dan bersihkan
+        text = text.lower()
+        
+        # Stop words Indonesia + English
+        stop_words = {
+            "yang", "dan", "di", "ke", "dari", "untuk", "dengan", "ini",
+            "itu", "ada", "tidak", "bisa", "akan", "sudah", "juga", "saya",
+            "aku", "kamu", "apa", "bagaimana", "adalah", "atau", "pada",
+            "the", "a", "an", "is", "are", "was", "were", "be", "been",
+            "to", "of", "in", "for", "on", "with", "at", "by", "from",
+            "this", "that", "it", "you", "we", "they", "he", "she",
+            "bocchi", "senpai", "hitori", "gotoh", "maaf", "terima", "kasih",
+        }
+        
+        # Tokenize — ambil kata 3+ huruf
+        words = re.findall(r'\b[a-z]{3,}\b', text)
+        
+        # Filter stop words & ambil yang unik
+        topics = list(set(w for w in words if w not in stop_words))
+        
+        # Limit to top 8 keywords per chat
+        return topics[:8]
+
+    def _update_topic_graph(self, user_text: str, agent_text: str):
+        """Update topic graph: hubungkan semua topik yang muncul bersamaan."""
+        combined = f"{user_text} {agent_text}"
+        topics = self._extract_topics(combined)
+        
+        if len(topics) < 2:
+            return  # Perlu minimal 2 topik untuk membuat relasi
+        
+        graph = self._load_topic_graph()
+        
+        # Hubungkan setiap topik satu sama lain (co-occurrence)
+        for i, topic_a in enumerate(topics):
+            if topic_a not in graph:
+                graph[topic_a] = []
+            for topic_b in topics[i+1:]:
+                if topic_b not in graph:
+                    graph[topic_b] = []
+                # Tambah relasi bidirectional (tanpa duplikat)
+                if topic_b not in graph[topic_a]:
+                    graph[topic_a].append(topic_b)
+                if topic_a not in graph[topic_b]:
+                    graph[topic_b].append(topic_a)
+        
+        self._save_topic_graph(graph)
+
+    def get_related_topics(self, query: str, depth: int = 2) -> List[str]:
+        """Cari topik terkait dari graph hingga kedalaman tertentu (BFS)."""
+        graph = self._load_topic_graph()
+        topics = self._extract_topics(query)
+        
+        visited = set()
+        queue = list(topics)
+        
+        for _ in range(depth):
+            next_queue = []
+            for topic in queue:
+                if topic in visited:
+                    continue
+                visited.add(topic)
+                neighbors = graph.get(topic, [])
+                next_queue.extend(n for n in neighbors if n not in visited)
+            queue = next_queue
+        
+        # Return semua visited minus input topics
+        return list(visited - set(topics))
 
     # ============================================================
     # EMBEDDING + SEARCH

@@ -59,6 +59,29 @@ EVOLVE_MODEL_CHAIN = [
     }
 ]
 
+STANDARD_MODEL_CHAIN = [
+    {
+        "provider": "openrouter",
+        "model": "openai/gpt-oss-120b:free",
+        "label": "GPT-OSS-120B (Free)"
+    },
+    {
+        "provider": "openrouter",
+        "model": "poolside/laguna-m.1:free",
+        "label": "Laguna M.1 (Free)"
+    },
+    {
+        "provider": "openrouter",
+        "model": "nvidia/nemotron-3-nano-30b-a3b:free",
+        "label": "Nemotron 3 Nano (Free)"
+    },
+    {
+        "provider": "ollama",
+        "model": "ollama3.5:latest",
+        "label": "Ollama (ollama3.5:latest)"
+    }
+]
+
 OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"
 
 # ============================================================
@@ -202,7 +225,7 @@ def _call_llm_with_fallback(
         label = candidate["label"]
 
         try:
-            print(f"[EVOLVE FALLBACK] [{i+1}/{len(model_chain)}] Mencoba: {label}...")
+            print(f"[MODEL FALLBACK] [{i+1}/{len(model_chain)}] Mencoba: {label}...")
             agent_logger.log_activity(
                 agent_id,
                 f"Trying model: {label} ({i+1}/{len(model_chain)})",
@@ -219,7 +242,7 @@ def _call_llm_with_fallback(
                 raise ValueError(f"Unknown provider: {provider}")
 
             # Berhasil!
-            print(f"[EVOLVE FALLBACK] ✅ Berhasil dengan: {label}")
+            print(f"[MODEL FALLBACK] ✅ Berhasil dengan: {label}")
             agent_logger.log_activity(
                 agent_id,
                 f"✅ Model OK: {label}",
@@ -229,15 +252,17 @@ def _call_llm_with_fallback(
 
         except Exception as e:
             last_error = e
-            print(f"[EVOLVE FALLBACK] ❌ Gagal ({label}): {e}")
+            print(f"[MODEL FALLBACK] ❌ Gagal ({label}): {e}")
             agent_logger.log_activity(
                 agent_id,
-                f"❌ Model gagal: {label} — {str(e)[:60]}",
+                f"❌ Model gagal: {label} - {str(e)[:60]}",
                 "error"
             )
             _time.sleep(1)  # Jeda sejenak sebelum coba model berikutnya
             continue
 
+    # Jika semua model gagal
+    print(f"[MODEL FALLBACK] ❌❌ SEMUA MODEL GAGAL! ❌❌")
     # Semua model gagal
     raise RuntimeError(
         f"Semua {len(model_chain)} model gagal. Error terakhir: {last_error}"
@@ -283,6 +308,12 @@ AGENT_TOOLS = {
         "description": "Mencari informasi di internet via DuckDuckGo",
         "param": "query pencarian (string)",
         "example": 'search_web("React vs Vue 2025")'
+    },
+    "web_surfer": {
+        "function": None,  # Special handler
+        "description": "Mengontrol browser secara otonom (Playwright/DuckDuckGo). Gunakan mode 'search|||query' untuk mencari, atau 'read|||url' untuk membaca halaman.",
+        "param": "mode|||nilai (contoh: search|||berita AI atau read|||https://example.com)",
+        "example": 'web_surfer("read|||https://python.org")'
     },
     "web_search": {
         "function": cari_di_internet,
@@ -496,6 +527,12 @@ def parse_tool_call(ai_response: str) -> dict | None:
         tool_name = tool_data.get("tool", "")
         param = tool_data.get("param", "")
         
+        # FIX: Ensure param is always a string to prevent 'unhashable type: slice' error
+        if isinstance(param, dict) or isinstance(param, list):
+            param = json.dumps(param)
+        elif not isinstance(param, str):
+            param = str(param)
+            
         if tool_name not in AGENT_TOOLS:
             return None
         
@@ -650,6 +687,29 @@ def execute_tool(tool_name: str, param: str, agent_id: str = "unknown") -> str:
         except Exception as e:
             return f"[ERROR] Gagal mengambil screenshot: {e}"
     
+    # Special handler: web_surfer
+    elif tool_name == "web_surfer":
+        try:
+            parts = param.split("|||")
+            if len(parts) < 2:
+                return "[ERROR] Parameter web_surfer harus 'mode|||nilai' (contoh: search|||query atau read|||url)"
+            
+            mode = parts[0].strip().lower()
+            nilai = parts[1].strip()
+            
+            if mode == "search":
+                # Use existing cari_di_internet for search
+                from os_tools import cari_di_internet
+                return cari_di_internet(nilai, agent_id=agent_id)
+            elif mode == "read":
+                # Use existing baca_halaman_web which has Playwright fallback
+                from os_tools import baca_halaman_web
+                return baca_halaman_web(nilai)
+            else:
+                return f"[ERROR] Mode '{mode}' tidak dikenal. Gunakan 'search' atau 'read'."
+        except Exception as e:
+            return f"[ERROR] web_surfer gagal: {e}"
+            
     # Special handler: delegate_to_agent
     elif tool_name == "delegate_to_agent":
         try:

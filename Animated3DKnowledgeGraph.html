@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AETHERIS_NET | 3D Knowledge Graph</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "tertiary-fixed-dim": "#c3c0ff",
+                    "on-tertiary": "#1d00a5",
+                    "secondary-fixed": "#dae2ff",
+                    "primary-container": "#0a0e1a",
+                    "on-secondary-container": "#a9b4d9",
+                    "surface-bright": "#37393a",
+                    "secondary": "#bac6eb",
+                    "on-background": "#e2e2e2",
+                    "inverse-primary": "#5a5e6d",
+                    "inverse-on-surface": "#2f3131",
+                    "on-secondary": "#24304d",
+                    "on-primary": "#2c303d",
+                    "surface-container-high": "#282a2b",
+                    "on-tertiary-fixed": "#0f0069",
+                    "on-primary-fixed": "#171b28",
+                    "on-error": "#690005",
+                    "on-surface-variant": "#c7c6cc",
+                    "surface-container-highest": "#333535",
+                    "on-tertiary-fixed-variant": "#3323cc",
+                    "on-surface": "#e2e2e2",
+                    "on-secondary-fixed-variant": "#3a4665",
+                    "primary-fixed": "#dfe2f3",
+                    "tertiary-fixed": "#e2dfff",
+                    "error": "#ffb4ab",
+                    "surface-variant": "#333535",
+                    "surface-container-low": "#1a1c1c",
+                    "tertiary-container": "#060044",
+                    "on-primary-fixed-variant": "#434654",
+                    "inverse-surface": "#e2e2e2",
+                    "surface-tint": "#c3c6d7",
+                    "surface-container-lowest": "#0c0f0f",
+                    "tertiary": "#c3c0ff",
+                    "secondary-container": "#3a4665",
+                    "outline": "#909096",
+                    "on-primary-container": "#777b8a",
+                    "secondary-fixed-dim": "#bac6eb",
+                    "on-tertiary-container": "#6c66ff",
+                    "on-secondary-fixed": "#0e1b37",
+                    "primary-fixed-dim": "#c3c6d7",
+                    "error-container": "#93000a",
+                    "outline-variant": "#46464c",
+                    "surface-dim": "#121414",
+                    "primary": "#c3c6d7",
+                    "on-error-container": "#ffdad6",
+                    "background": "#121414",
+                    "surface": "#121414",
+                    "surface-container": "#1e2020"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "unit": "8px",
+                    "section-gap": "120px",
+                    "container-margin": "64px",
+                    "indent-offset": "24px",
+                    "gutter": "32px"
+            },
+            "fontFamily": {
+                    "display-lg": ["Outfit"],
+                    "stat-value": ["Outfit"],
+                    "headline-lg-mobile": ["Outfit"],
+                    "label-caps": ["Outfit"],
+                    "display-sm": ["Outfit"],
+                    "body-lg": ["Outfit"],
+                    "headline-lg": ["Outfit"]
+            },
+            "fontSize": {
+                    "display-lg": ["72px", {"lineHeight": "1.1", "letterSpacing": "0.15em", "fontWeight": "800"}],
+                    "stat-value": ["24px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "300"}],
+                    "headline-lg-mobile": ["24px", {"lineHeight": "1.2", "letterSpacing": "0.08em", "fontWeight": "700"}],
+                    "label-caps": ["14px", {"lineHeight": "1", "letterSpacing": "0.2em", "fontWeight": "600"}],
+                    "display-sm": ["48px", {"lineHeight": "1.1", "letterSpacing": "0.1em", "fontWeight": "700"}],
+                    "body-lg": ["18px", {"lineHeight": "1.6", "letterSpacing": "0.02em", "fontWeight": "400"}],
+                    "headline-lg": ["32px", {"lineHeight": "1.2", "letterSpacing": "0.08em", "fontWeight": "700"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body {
+            background-color: #0c0f0f;
+            color: #e2e2e2;
+            overflow: hidden;
+            margin: 0;
+        }
+
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+
+        /* Scanning Overlay Effect */
+        .scanline-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to bottom, transparent 50%, rgba(195, 198, 215, 0.02) 50%);
+            background-size: 100% 4px;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        /* Hud Brackets */
+        .bracket-tl::before, .bracket-tl::after,
+        .bracket-tr::before, .bracket-tr::after,
+        .bracket-bl::before, .bracket-bl::after,
+        .bracket-br::before, .bracket-br::after {
+            content: '';
+            position: absolute;
+            background: #c3c6d7;
+            opacity: 0.5;
+        }
+        .bracket-container { position: relative; }
+        .bracket-tl::before { top: 0; left: 0; width: 12px; height: 1px; }
+        .bracket-tl::after { top: 0; left: 0; width: 1px; height: 12px; }
+        .bracket-tr::before { top: 0; right: 0; width: 12px; height: 1px; }
+        .bracket-tr::after { top: 0; right: 0; width: 1px; height: 12px; }
+
+        /* Custom Animations */
+        @keyframes rotate-sphere {
+            from { transform: rotateY(0deg) rotateX(15deg); }
+            to { transform: rotateY(360deg) rotateX(15deg); }
+        }
+        .animate-rotate {
+            animation: rotate-sphere 60s linear infinite;
+        }
+
+        @keyframes pulse-soft {
+            0%, 100% { opacity: 0.4; filter: blur(1px); }
+            50% { opacity: 1; filter: blur(0px); }
+        }
+        .pulse-indicator {
+            animation: pulse-soft 2s ease-in-out infinite;
+        }
+
+        .panel-enter {
+            opacity: 0;
+            transform: translateX(-20px);
+            transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .panel-enter-right {
+            opacity: 0;
+            transform: translateX(20px);
+            transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .panel-visible {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        /* Hover slide accent */
+        .nav-link-hover {
+            position: relative;
+            overflow: hidden;
+        }
+        .nav-link-hover::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: -100%;
+            width: 100%;
+            height: 1px;
+            background: #c3c6d7;
+            transition: left 0.3s ease-out;
+        }
+        .nav-link-hover:hover::after {
+            left: 0;
+        }
+
+        /* Glow buttons */
+        .glow-hover:hover {
+            box-shadow: 0 0 15px rgba(195, 192, 255, 0.4);
+            border-color: #c3c0ff;
+            transform: translateX(8px);
+        }
+
+        /* Wireframe Sphere Styling */
+        .sphere-container {
+            perspective: 1000px;
+        }
+        .sphere-wireframe {
+            position: absolute;
+            width: 600px;
+            height: 600px;
+            border: 1px solid rgba(195, 198, 215, 0.1);
+            border-radius: 50%;
+            transform-style: preserve-3d;
+        }
+        .ring {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: 1px solid rgba(195, 198, 215, 0.15);
+            border-radius: 50%;
+        }
+    </style>
+</head>
+<body class="font-body-lg text-on-surface selection:bg-tertiary selection:text-on-tertiary">
+<div class="scanline-overlay"></div>
+<!-- Full Screen Background Shader -->
+
+<!-- Top Navigation Bar (TopAppBar) -->
+<header class="fixed top-0 w-full z-50 flex justify-between items-center px-container-margin py-8 bg-gradient-to-b from-surface-container-lowest to-transparent">
+<div class="flex items-center gap-4">
+<div class="font-display-sm text-display-sm tracking-widest text-primary drop-shadow-[0_0_10px_rgba(195,198,215,0.5)]">AETHERIS_NET</div>
+<div class="h-4 w-px bg-outline-variant mx-4"></div>
+<nav class="flex gap-gutter">
+<a class="font-label-caps text-label-caps text-on-surface-variant opacity-60 nav-link-hover transition-all" href="#">NODE_MAP</a>
+<a class="font-label-caps text-label-caps text-primary border-b border-primary pb-1 nav-link-hover transition-all" href="#">QUERY_LOG</a>
+<a class="font-label-caps text-label-caps text-on-surface-variant opacity-60 nav-link-hover transition-all" href="#">SYST_INTEL</a>
+<a class="font-label-caps text-label-caps text-on-surface-variant opacity-60 nav-link-hover transition-all" href="#">ADMIN_OVR</a>
+</nav>
+</div>
+<div class="flex items-center gap-gutter">
+<div class="relative group">
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary transition-colors cursor-pointer" data-icon="notifications">notifications</span>
+<span class="absolute -top-1 -right-1 w-1.5 h-1.5 bg-error rounded-full"></span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors cursor-pointer" data-icon="settings">settings</span>
+<div class="flex items-center gap-3 ml-4">
+<div class="w-8 h-8 rounded-full border border-outline-variant overflow-hidden">
+<img alt="User Profile" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA6qlCARAYIqky3zgjCPoOfUd07xEoNyF5k0noTbH7yEhGX7zQhSLzvVFXE2NAim2czXgzLqb5rdmZKKOyVIZKz1jo727jJrrkvOb4cFogIBCVn7uH5jua7w0Of8um_87x2xgLmq29Nk9Fr6eRIXVC8YXKq1fcSve9_brRj14M57dH9JOYigU2TFEWUpPN7efpvcm5DxtRKeyd7GphY2b3OwbRie9LDbstNFHX-G10pS4gatEoBfEZWasKm4md-00YH-5ohbpHZZZ61"/>
+</div>
+</div>
+</div>
+</header>
+<!-- Side Navigation (SideNavBar) -->
+<aside class="fixed left-indent-offset top-1/2 -translate-y-1/2 flex flex-col gap-unit z-40 backdrop-blur-xl bg-surface-container-low/10 p-4 rounded-xl border border-white/5">
+<div class="flex flex-col gap-8 items-center">
+<div class="group flex flex-col items-center gap-1 cursor-pointer">
+<span class="material-symbols-outlined text-on-surface-variant/40 hover:text-on-surface transition-all" data-icon="hub">hub</span>
+<span class="font-label-caps text-[10px] tracking-widest text-on-surface-variant/40 group-hover:text-on-surface">VISUALIZE</span>
+</div>
+<div class="group flex flex-col items-center gap-1 cursor-pointer scale-110">
+<span class="material-symbols-outlined text-tertiary drop-shadow-[0_0_8px_rgba(195,192,255,0.6)]" data-icon="filter_list">filter_list</span>
+<span class="font-label-caps text-[10px] tracking-widest text-tertiary">FILTER</span>
+</div>
+<div class="group flex flex-col items-center gap-1 cursor-pointer">
+<span class="material-symbols-outlined text-on-surface-variant/40 hover:text-on-surface transition-all" data-icon="visibility_off">visibility_off</span>
+<span class="font-label-caps text-[10px] tracking-widest text-on-surface-variant/40 group-hover:text-on-surface">REDACT</span>
+</div>
+<div class="group flex flex-col items-center gap-1 cursor-pointer">
+<span class="material-symbols-outlined text-on-surface-variant/40 hover:text-on-surface transition-all" data-icon="ios_share">ios_share</span>
+<span class="font-label-caps text-[10px] tracking-widest text-on-surface-variant/40 group-hover:text-on-surface">EXPORT</span>
+</div>
+</div>
+</aside>
+<!-- Central 3D Visualizer Canvas -->
+<main class="relative w-full h-screen flex items-center justify-center overflow-hidden">
+<div class="sphere-container animate-rotate flex items-center justify-center pointer-events-none">
+<!-- Simulated 3D wireframe sphere -->
+<div class="sphere-wireframe flex items-center justify-center">
+<div class="ring" style="transform: rotateY(0deg)"></div>
+<div class="ring" style="transform: rotateY(45deg)"></div>
+<div class="ring" style="transform: rotateY(90deg)"></div>
+<div class="ring" style="transform: rotateY(135deg)"></div>
+<div class="ring" style="transform: rotateX(90deg)"></div>
+<!-- Core Glow -->
+<div class="absolute w-32 h-32 bg-primary/20 blur-[60px] rounded-full"></div>
+</div>
+<!-- Floating Data Nodes -->
+<div class="absolute" style="transform: translateZ(250px) translateX(100px) translateY(-50px)">
+<div class="w-2 h-2 bg-primary shadow-[0_0_10px_#c3c6d7] rounded-full"></div>
+</div>
+<div class="absolute" style="transform: translateZ(-200px) translateX(-150px) translateY(80px)">
+<div class="w-1.5 h-1.5 bg-tertiary shadow-[0_0_10px_#c3c0ff] rounded-full"></div>
+</div>
+</div>
+<!-- GRAPH_CONTROLS Panel (Left) -->
+<section class="panel-enter absolute left-container-margin top-1/4 w-80 space-y-gutter" id="graph-controls">
+<div class="bracket-container p-6 bg-surface-container-lowest/40 backdrop-blur-md border border-white/5">
+<div class="bracket-tl"></div><div class="bracket-tr"></div>
+<h3 class="font-label-caps text-label-caps text-primary mb-6 tracking-widest">GRAPH_CONTROLS</h3>
+<div class="space-y-6">
+<div>
+<div class="flex justify-between font-label-caps text-[10px] text-on-surface-variant/60 mb-2">
+<span>RESOLUTION</span>
+<span>84%</span>
+</div>
+<div class="h-1 bg-surface-container-highest relative overflow-hidden group">
+<div class="absolute h-full bg-primary w-[84%]"></div>
+<div class="absolute h-full bg-white/20 w-1 group-hover:translate-x-full transition-transform"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between font-label-caps text-[10px] text-on-surface-variant/60 mb-2">
+<span>NODE_DENSITY</span>
+<span>0.42</span>
+</div>
+<input class="w-full h-1 bg-surface-container-highest accent-primary appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary/50" type="range"/>
+</div>
+<div class="grid grid-cols-2 gap-2 pt-4">
+<button class="glow-hover border border-outline-variant px-4 py-2 font-label-caps text-[12px] text-center transition-all bg-transparent">RE_MAP</button>
+<button class="glow-hover border border-outline-variant px-4 py-2 font-label-caps text-[12px] text-center transition-all bg-transparent">ISOLATE</button>
+</div>
+</div>
+</div>
+<!-- System Metrics -->
+<div class="px-6 py-4 border-l-2 border-primary/20 space-y-4">
+<div class="flex justify-between items-end">
+<span class="font-label-caps text-[10px] text-on-surface-variant/40">MEMORY_LOAD</span>
+<span class="font-stat-value text-stat-value text-primary">1.2GB</span>
+</div>
+<div class="flex justify-between items-end">
+<span class="font-label-caps text-[10px] text-on-surface-variant/40">LATENCY</span>
+<span class="font-stat-value text-stat-value text-tertiary">04ms</span>
+</div>
+</div>
+</section>
+<!-- NODE_INTEL Panel (Right) -->
+<section class="panel-enter-right absolute right-container-margin top-1/4 w-96 space-y-gutter" id="node-intel">
+<div class="bracket-container p-6 bg-surface-container-lowest/40 backdrop-blur-md border border-white/5">
+<div class="bracket-tl"></div><div class="bracket-tr"></div>
+<div class="flex justify-between items-start mb-6">
+<div>
+<h2 class="font-headline-lg text-headline-lg leading-none mb-1">NODE_INTEL</h2>
+<span class="font-label-caps text-[10px] text-tertiary tracking-widest">SECTOR_7_CENTRAL</span>
+</div>
+<div class="flex items-center gap-2 px-2 py-1 bg-primary/10 border border-primary/20 rounded">
+<div class="w-2 h-2 rounded-full bg-primary pulse-indicator"></div>
+<span class="font-label-caps text-[10px] text-primary">LIVE_SYNC</span>
+</div>
+</div>
+<div class="space-y-6">
+<div class="flex flex-col gap-1 border-b border-white/5 pb-4">
+<span class="font-label-caps text-[10px] text-on-surface-variant/60">ENCRYPTION_STRENGTH</span>
+<div class="flex gap-1">
+<div class="h-2 w-4 bg-primary"></div>
+<div class="h-2 w-4 bg-primary"></div>
+<div class="h-2 w-4 bg-primary"></div>
+<div class="h-2 w-4 bg-primary/20"></div>
+<div class="h-2 w-4 bg-primary/20"></div>
+<span class="ml-auto font-stat-value text-sm text-primary">AES_256</span>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-gutter">
+<div>
+<span class="font-label-caps text-[10px] text-on-surface-variant/60 block mb-1">RELEVANCE_SCORE</span>
+<span class="font-display-sm text-[28px] text-on-surface">98.4</span>
+</div>
+<div>
+<span class="font-label-caps text-[10px] text-on-surface-variant/60 block mb-1">DATA_TYPE</span>
+<span class="font-headline-lg text-lg text-tertiary tracking-wider">NEURAL_NET</span>
+</div>
+</div>
+<div class="pt-4">
+<div class="flex items-center gap-4 group cursor-pointer">
+<div class="w-12 h-12 flex items-center justify-center border border-primary/30 group-hover:border-primary transition-all">
+<span class="material-symbols-outlined text-primary" data-icon="terminal">terminal</span>
+</div>
+<div>
+<h4 class="font-label-caps text-[12px] text-on-surface group-hover:translate-x-1 transition-all">DECRYPT_LOGS</h4>
+<p class="text-[10px] text-on-surface-variant/60">Requires clearance level 4+</p>
+</div>
+</div>
+</div>
+<button class="w-full py-4 bg-primary text-on-primary font-label-caps tracking-widest text-[12px] hover:bg-white hover:text-black transition-colors flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-sm" data-icon="bolt">bolt</span>
+                        INITIATE_HANDSHAKE
+                    </button>
+</div>
+</div>
+<!-- Terminal Stream Simulation -->
+<div class="font-mono text-[10px] text-primary/40 p-4 bg-black/40 h-32 overflow-hidden border border-white/5">
+<div class="flex flex-col gap-1" id="terminal-feed">
+<p>&gt; INITIATING_NODE_RECON... SUCCESS</p>
+<p>&gt; ANALYZING_TRAFFIC_PATTERN [04:22:11]</p>
+<p>&gt; PACKET_LOSS: 0.0002%</p>
+<p>&gt; WARNING: EXTERNAL_QUERY_DETECTED</p>
+<p>&gt; FILTERING_NOISE...</p>
+</div>
+</div>
+</section>
+</main>
+<!-- Footer Stats -->
+<footer class="fixed bottom-0 w-full px-container-margin py-8 flex justify-between items-end pointer-events-none">
+<div class="flex gap-gutter">
+<div class="flex flex-col">
+<span class="font-label-caps text-[10px] text-on-surface-variant/40">GEO_LOC</span>
+<span class="font-label-caps text-[12px]">PRAGUE_CELL_7</span>
+</div>
+<div class="flex flex-col">
+<span class="font-label-caps text-[10px] text-on-surface-variant/40">UPTIME</span>
+<span class="font-label-caps text-[12px]">144:12:09</span>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="text-right">
+<p class="font-label-caps text-[10px] text-on-surface-variant/40">SYSTEM_STATUS</p>
+<p class="font-label-caps text-[12px] text-primary">OPERATIONAL</p>
+</div>
+<div class="w-16 h-[2px] bg-primary"></div>
+</div>
+</footer>
+<script>
+        // Animate panels in on load
+        window.addEventListener('DOMContentLoaded', () => {
+            const controls = document.getElementById('graph-controls');
+            const intel = document.getElementById('node-intel');
+
+            setTimeout(() => {
+                controls.classList.add('panel-visible');
+            }, 300);
+
+            setTimeout(() => {
+                intel.classList.add('panel-visible');
+            }, 600);
+        });
+
+        // Simple terminal feed animation
+        const terminalFeed = document.getElementById('terminal-feed');
+        const messages = [
+            "> REDIRECTING_ROUTING_TABLE...",
+            "> BUFFER_SIZE_OVERRIDE: 4096KB",
+            "> TRACING_PACKET_ORIGIN...",
+            "> NODE_ENCRYPTION_LAYER_3_VERIFIED",
+            "> SCANNING_REDUNDANT_NODES...",
+            "> DATA_CORRUPTION_INDEX: 0.00%"
+        ];
+        let messageIndex = 0;
+
+        setInterval(() => {
+            const p = document.createElement('p');
+            p.textContent = messages[messageIndex % messages.length];
+            terminalFeed.appendChild(p);
+            if (terminalFeed.children.length > 8) {
+                terminalFeed.removeChild(terminalFeed.children[0]);
+            }
+            messageIndex++;
+        }, 3000);
+    </script>
+</body></html>

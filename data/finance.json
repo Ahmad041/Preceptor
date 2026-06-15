@@ -1,6 +1,6 @@
 {
   "total_budget": 1000000,
-  "spent": 4144.000000000001,
+  "spent": 6374.6,
   "currency": "Kessoku Points",
   "agents": {
     "soft": {
@@ -9,8 +9,8 @@
       "name": "Hitori Gotoh"
     },
     "docs": {
-      "tokens": 28229,
-      "kessoku": 2822.9000000000005,
+      "tokens": 49377,
+      "kessoku": 4937.700000000001,
       "name": "Ryo Yamada"
     },
     "scout": {
@@ -19,8 +19,8 @@
       "name": "Nijika Ijichi"
     },
     "analyst": {
-      "tokens": 9248,
-      "kessoku": 924.8,
+      "tokens": 10406,
+      "kessoku": 1040.6,
       "name": "Kita Ikuyo"
     },
     "mon": {
@@ -260,6 +260,102 @@
       "agent_id": "docs",
       "tokens": 310,
       "cost": 31.0
+    },
+    {
+      "timestamp": "2026-06-03T08:08:17.845004",
+      "agent_id": "analyst",
+      "tokens": 59,
+      "cost": 5.9
+    },
+    {
+      "timestamp": "2026-06-03T08:08:56.451942",
+      "agent_id": "docs",
+      "tokens": 167,
+      "cost": 16.7
+    },
+    {
+      "timestamp": "2026-06-03T08:09:27.639616",
+      "agent_id": "docs",
+      "tokens": 463,
+      "cost": 46.3
+    },
+    {
+      "timestamp": "2026-06-03T08:19:01.075728",
+      "agent_id": "docs",
+      "tokens": 3408,
+      "cost": 340.8
+    },
+    {
+      "timestamp": "2026-06-03T08:35:47.733340",
+      "agent_id": "docs",
+      "tokens": 535,
+      "cost": 53.5
+    },
+    {
+      "timestamp": "2026-06-03T08:37:22.178700",
+      "agent_id": "docs",
+      "tokens": 3625,
+      "cost": 362.5
+    },
+    {
+      "timestamp": "2026-06-03T08:39:42.904858",
+      "agent_id": "docs",
+      "tokens": 3526,
+      "cost": 352.6
+    },
+    {
+      "timestamp": "2026-06-08T17:39:13.381955",
+      "agent_id": "docs",
+      "tokens": 1564,
+      "cost": 156.4
+    },
+    {
+      "timestamp": "2026-06-08T17:47:42.943787",
+      "agent_id": "analyst",
+      "tokens": 27,
+      "cost": 2.7
+    },
+    {
+      "timestamp": "2026-06-08T17:48:21.210009",
+      "agent_id": "analyst",
+      "tokens": 275,
+      "cost": 27.5
+    },
+    {
+      "timestamp": "2026-06-08T17:50:50.123819",
+      "agent_id": "analyst",
+      "tokens": 797,
+      "cost": 79.7
+    },
+    {
+      "timestamp": "2026-06-12T15:38:48.032148",
+      "agent_id": "docs",
+      "tokens": 248,
+      "cost": 24.8
+    },
+    {
+      "timestamp": "2026-06-12T15:59:40.058299",
+      "agent_id": "docs",
+      "tokens": 2190,
+      "cost": 219.0
+    },
+    {
+      "timestamp": "2026-06-12T16:06:18.207462",
+      "agent_id": "docs",
+      "tokens": 1702,
+      "cost": 170.2
+    },
+    {
+      "timestamp": "2026-06-12T16:08:43.420511",
+      "agent_id": "docs",
+      "tokens": 1849,
+      "cost": 184.9
+    },
+    {
+      "timestamp": "2026-06-12T16:17:41.808519",
+      "agent_id": "docs",
+      "tokens": 1871,
+      "cost": 187.1
     }
   ]
 }

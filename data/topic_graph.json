@@ -1,0 +1,74 @@
+{
+  "kerja": [
+    "cara",
+    "audio",
+    "voice",
+    "tts",
+    "menggunakan",
+    "generate",
+    "clone"
+  ],
+  "cara": [
+    "kerja",
+    "audio",
+    "voice",
+    "tts",
+    "menggunakan",
+    "generate",
+    "clone"
+  ],
+  "audio": [
+    "kerja",
+    "cara",
+    "voice",
+    "tts",
+    "menggunakan",
+    "generate",
+    "clone"
+  ],
+  "voice": [
+    "kerja",
+    "cara",
+    "audio",
+    "tts",
+    "menggunakan",
+    "generate",
+    "clone"
+  ],
+  "tts": [
+    "kerja",
+    "cara",
+    "audio",
+    "voice",
+    "menggunakan",
+    "generate",
+    "clone"
+  ],
+  "menggunakan": [
+    "kerja",
+    "cara",
+    "audio",
+    "voice",
+    "tts",
+    "generate",
+    "clone"
+  ],
+  "generate": [
+    "kerja",
+    "cara",
+    "audio",
+    "voice",
+    "tts",
+    "menggunakan",
+    "clone"
+  ],
+  "clone": [
+    "kerja",
+    "cara",
+    "audio",
+    "voice",
+    "tts",
+    "menggunakan",
+    "generate"
+  ]
+}

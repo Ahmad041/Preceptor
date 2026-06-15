@@ -1,0 +1,106 @@
+.knowledge-graph-container {
+    background-color: transparent;
+    color: #e2e2e2;
+    overflow: hidden;
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+.knowledge-graph-container .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* Scanning Overlay Effect */
+.knowledge-graph-container .scanline-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(to bottom, transparent 50%, rgba(195, 198, 215, 0.02) 50%);
+    background-size: 100% 4px;
+    pointer-events: none;
+    z-index: 100;
+}
+
+/* Hud Brackets */
+.knowledge-graph-container .bracket-tl::before, 
+.knowledge-graph-container .bracket-tl::after,
+.knowledge-graph-container .bracket-tr::before, 
+.knowledge-graph-container .bracket-tr::after,
+.knowledge-graph-container .bracket-bl::before, 
+.knowledge-graph-container .bracket-bl::after,
+.knowledge-graph-container .bracket-br::before, 
+.knowledge-graph-container .bracket-br::after {
+    content: '';
+    position: absolute;
+    background: #c3c6d7;
+    opacity: 0.5;
+}
+.knowledge-graph-container .bracket-container { position: relative; }
+.knowledge-graph-container .bracket-tl::before { top: 0; left: 0; width: 12px; height: 1px; }
+.knowledge-graph-container .bracket-tl::after { top: 0; left: 0; width: 1px; height: 12px; }
+.knowledge-graph-container .bracket-tr::before { top: 0; right: 0; width: 12px; height: 1px; }
+.knowledge-graph-container .bracket-tr::after { top: 0; right: 0; width: 1px; height: 12px; }
+
+/* Custom Animations */
+@keyframes rotate-sphere {
+    from { transform: rotateY(0deg) rotateX(15deg); }
+    to { transform: rotateY(360deg) rotateX(15deg); }
+}
+.knowledge-graph-container .animate-rotate {
+    animation: rotate-sphere 60s linear infinite;
+}
+
+@keyframes pulse-soft {
+    0%, 100% { opacity: 0.4; filter: blur(1px); }
+    50% { opacity: 1; filter: blur(0px); }
+}
+.knowledge-graph-container .pulse-indicator {
+    animation: pulse-soft 2s ease-in-out infinite;
+}
+
+.knowledge-graph-container .panel-enter {
+    opacity: 0;
+    transform: translateX(-20px);
+    transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.knowledge-graph-container .panel-enter-right {
+    opacity: 0;
+    transform: translateX(20px);
+    transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.knowledge-graph-container .panel-visible {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+/* Glow buttons */
+.knowledge-graph-container .glow-hover:hover {
+    box-shadow: 0 0 15px rgba(195, 192, 255, 0.4);
+    border-color: #c3c0ff;
+    transform: translateX(8px);
+}
+
+/* Wireframe Sphere Styling */
+.knowledge-graph-container .sphere-container {
+    perspective: 1000px;
+}
+.knowledge-graph-container .sphere-wireframe {
+    position: absolute;
+    width: 600px;
+    height: 600px;
+    border: 1px solid rgba(195, 198, 215, 0.1);
+    border-radius: 50%;
+    transform-style: preserve-3d;
+}
+.knowledge-graph-container .ring {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border: 1px solid rgba(195, 198, 215, 0.15);
+    border-radius: 50%;
+}

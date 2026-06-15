@@ -43,20 +43,23 @@ class OmniscientHub:
             logger.error(f"Docs search error: {e}")
             return []
             
-    def search_code(self, query: str):
-        """Searches Code via GitNexus API (if available)"""
-        # We will attempt to use the GitNexus local API.
-        # This will be refined once we have the exact API endpoint.
+    def search_code(self, query: str, top_k=5):
+        """Searches Code via local CodeIndexer (ChromaDB semantic search)."""
         try:
-            # Placeholder for GitNexus Code Search.
-            # Depending on how we integrate it, we might just return a URL to the GitNexus UI or use an API.
+            from code_indexer import code_indexer
+            results = code_indexer.search_code(query, top_k=top_k)
+            if results:
+                return results
+            
+            # Fallback: check if GitNexus is running
             url = f"http://localhost:{self.gitnexus_port}/api/repo"
             res = requests.get(url, timeout=2)
             if res.status_code == 200:
-                return [{"type": "code", "content": "GitNexus server is running. Deep code search available via GitNexus UI.", "source": "GitNexus"}]
+                return [{"type": "code", "content": "No local code indexed yet. GitNexus server available.", "source": "GitNexus"}]
             return []
-        except Exception:
-            return [{"type": "error", "content": "GitNexus server unreachable.", "source": "GitNexus"}]
+        except Exception as e:
+            logger.debug(f"Code search error: {e}")
+            return []
             
     def unified_search(self, query: str):
         """Performs search across Memory, Docs, and Code"""

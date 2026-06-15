@@ -1,10 +1,14 @@
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request as FastAPIRequest
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
 import requests
 import datetime
+try:
+    from duckduckgo_search import DDGS
+except ImportError:
+    pass
 try:
     from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
@@ -58,6 +62,7 @@ from jarvis_orchestrator import jarvis
 from gitnexus_runner import gitnexus_server
 from omniscient import omniscient
 import tech_doc_generator as tech_gen
+from simulation_routes import simulation_router
 # MCP Support
 try:
     from mcp.server.sse import SseServerTransport
@@ -71,7 +76,7 @@ except ImportError:
 
 load_dotenv()
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "qwen/qwen-2.5-72b-instruct")
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openai/gpt-oss-120b:free")
 
 if not OPENROUTER_API_KEY:
     print("[WARNING] OPENROUTER_API_KEY belum di-set di file .env!")
@@ -137,6 +142,8 @@ app = FastAPI()
 # Setup direktori cache
 AUDIO_CACHE_DIR = os.path.join(os.getcwd(), "data", "audio_cache")
 os.makedirs(AUDIO_CACHE_DIR, exist_ok=True)
+
+REFERENSI_SUARA = "bocchi_referensi.wav"
 
 # ============================================================
 # GLOBAL SETTINGS (HOT-RELOADABLE)
@@ -609,10 +616,8 @@ async def agent_command_api(data: AgentCommand):
                 
                 agent_logger.set_agent_status(target_agent, "processing")
                 
-                evolve_chain = None
-                if target_agent == "evolve":
-                    from agent_tools import EVOLVE_MODEL_CHAIN
-                    evolve_chain = EVOLVE_MODEL_CHAIN
+                from agent_tools import EVOLVE_MODEL_CHAIN, STANDARD_MODEL_CHAIN
+                evolve_chain = EVOLVE_MODEL_CHAIN if target_agent == "evolve" else STANDARD_MODEL_CHAIN
                 
                 try:
                     task_response = await process_agent_command_with_tools(
@@ -680,16 +685,15 @@ async def agent_command_api(data: AgentCommand):
         # Evolve agent butuh lebih banyak putaran untuk siklus evolusi penuh
         evolve_rounds = 7 if data.agent_id == "evolve" else 3
         
-        # Import model chain untuk agen Evolve (multi-model fallback)
-        evolve_chain = None
-        if data.agent_id == "evolve":
-            from agent_tools import EVOLVE_MODEL_CHAIN
-            evolve_chain = EVOLVE_MODEL_CHAIN
-            agent_logger.log_activity(
-                data.agent_id,
-                f"AlphaEvolve mode: {len(evolve_chain)} model candidates loaded",
-                "system"
-            )
+        # Import model chain untuk semua agen (multi-model fallback)
+        from agent_tools import EVOLVE_MODEL_CHAIN, STANDARD_MODEL_CHAIN
+        evolve_chain = EVOLVE_MODEL_CHAIN if data.agent_id == "evolve" else STANDARD_MODEL_CHAIN
+        
+        agent_logger.log_activity(
+            data.agent_id,
+            f"Multi-Model mode: {len(evolve_chain)} model candidates loaded",
+            "system"
+        )
         
         # Gunakan tool-calling loop dari agent_tools
         ai_response = await process_agent_command_with_tools(
@@ -787,6 +791,129 @@ async def upload_visual(file: UploadFile = File(...), emotion: str = Form("Neutr
         return {"status": "success", "path": f"/bocchi_assets/{filename}"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+@app.get("/api/system/ollama-models")
+async def get_ollama_models():
+    try:
+        import subprocess
+        result = subprocess.run(["ollama", "list"], capture_output=True, text=True)
+        if result.returncode != 0:
+            raise Exception("Failed to run ollama list")
+            
+        lines = result.stdout.strip().split('\n')
+        models = []
+        for line in lines[1:]: # Skip header
+            if line.strip():
+                models.append(line.split()[0])
+                
+        return {"status": "success", "models": models}
+    except Exception as e:
+        return {"status": "error", "message": str(e), "models": []}
+
+@app.get("/api/system/update/stream")
+async def system_update_stream(provider: str = "Ollama", model: str = "llama3", query: str = "topic:ai language:python"):
+    async def event_generator():
+        yield "data: > INITIALIZING SELF-EVOLUTION PROTOCOL...\n\n"
+        await asyncio.sleep(1)
+        
+        # Gathering Info
+        yield f"data: > SCANNING GITHUB FOR REPOS ({query})...\n\n"
+        await asyncio.sleep(1)
+        try:
+            gh_res = requests.get(f"https://api.github.com/search/repositories?q={query}&sort=updated", timeout=10)
+            if gh_res.status_code == 200:
+                repos = gh_res.json().get("items", [])[:5]
+                gh_text = "\n".join([f"- {r['name']}: {r.get('description', '')} ({r['html_url']})" for r in repos])
+                github_context = f"Github Repos for '{query}':\n{gh_text}" if repos else f"No repos found for '{query}'."
+            else:
+                github_context = f"Github Trends: Error {gh_res.status_code}"
+        except Exception as e:
+            github_context = f"Github Trends: Failed to fetch ({str(e)})"
+        
+        yield "data: > SCANNING YOUTUBE FOR TECH NEWS...\n\n"
+        await asyncio.sleep(1)
+        yt_context = "YouTube Tech News: (Mock Data) New OpenAI model released, Ollama 0.1.30 adds concurrency."
+        
+        yield "data: > SEARCHING THE WEB FOR AI BREAKTHROUGHS...\n\n"
+        # Optional: Actual duckduckgo call
+        web_context = ""
+        try:
+            with DDGS() as ddgs:
+                results = list(ddgs.text("AI breakthroughs newest update models", max_results=3))
+                web_context = str(results)
+        except Exception as e:
+            web_context = "Web search failed or duckduckgo_search not installed."
+        await asyncio.sleep(1)
+        
+        yield "data: > ANALYZING LOCAL SYSTEM ARCHITECTURE...\n\n"
+        # Just scan the root directory files
+        files = [f for f in os.listdir(".") if os.path.isfile(f) and f.endswith(".py")]
+        local_context = f"Local Py files: {', '.join(files)}"
+        await asyncio.sleep(1)
+        
+        yield "data: > SYNTHESIZING ARCHITECTURAL UPDATES...\n\n"
+        
+        prompt = f'''
+Based on the following AI news context, generate an update plan for an open-source AI desktop application (which currently has python backend and react frontend).
+Github: {github_context}
+YouTube: {yt_context}
+Web: {web_context}
+Local Files: {local_context}
+
+Provide a detailed update plan in Markdown. For the architectural additions, include a Mermaid flowchart that STRICTLY follows this template and classDef styling:
+
+```mermaid
+flowchart TD
+    %% Styling Definitions
+    classDef init fill:#2d3436,stroke:#74b9ff,stroke-width:2px,color:#fff
+    classDef gui fill:#6c5ce7,stroke:#a29bfe,stroke-width:2px,color:#fff
+    classDef input fill:#00b894,stroke:#55efc4,stroke-width:2px,color:#fff
+    classDef brain fill:#e84393,stroke:#fd79a8,stroke-width:2px,color:#fff
+    classDef action fill:#e17055,stroke:#fab1a0,stroke-width:2px,color:#fff
+    classDef output fill:#0984e3,stroke:#74b9ff,stroke-width:2px,color:#fff
+    classDef memory fill:#fdcb6e,stroke:#ffeaa7,stroke-width:2px,color:#2d3436
+
+    %% Your nodes and connections here...
+    %% Example: NodeA --> NodeB
+    %% class NodeA,NodeB gui
+```
+
+Ensure you apply the styling classes (init, gui, input, brain, action, output, memory) to your nodes.
+Do not include any greeting, just the markdown.
+'''
+        
+        # Use LLM (mocking the LLM call here, or actually calling local Ollama)
+        try:
+            if provider.lower() == "openrouter" and OPENROUTER_API_KEY:
+                headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}"}
+                payload = {
+                    "model": OPENROUTER_MODEL,
+                    "messages": [{"role": "user", "content": prompt}]
+                }
+                res = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=120)
+                res_data = res.json()
+                plan_md = res_data["choices"][0]["message"]["content"]
+            else:
+                # Default to Ollama
+                res = requests.post("http://localhost:11434/api/generate", json={"model": model, "prompt": prompt, "stream": False}, timeout=600)
+                res_data = res.json()
+                if "error" in res_data:
+                    raise Exception(res_data["error"])
+                plan_md = res_data.get("response", f"No response key found. Data: {str(res_data)}")
+        except Exception as e:
+            plan_md = f"# Fallback Update Plan\nError fetching from {provider} (Model: {model}): {str(e)}\n\n```mermaid\ngraph TD\nA[Error] --> B[Retry]\n```"
+
+        await asyncio.sleep(1)
+        
+        # Save to file
+        date_str = datetime.datetime.now().strftime("%d-%m-%Y")
+        file_name = f"Update {date_str}.md"
+        with open(file_name, "w", encoding="utf-8") as f:
+            f.write(plan_md)
+            
+        yield f"data: > PROTOCOL SAVED TO {file_name}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 @app.get("/api/system/stats")
 async def get_system_stats():
@@ -2443,6 +2570,16 @@ async def jarvis_chat(data: JarvisChatRequest):
     """Chat dengan BOCCHI-JARVIS via Ollama lokal."""
     result = jarvis.process(data.message, data.context)
     
+    # Parse emosi dari tag [EMOTION: ...] di respons LLM
+    detected_emotion = "Neutral"
+    if result.get("status") == "success" and result.get("response"):
+        emotion_match = re.match(r'\[EMOTION:\s*(\w+)\]\s*', result["response"])
+        if emotion_match:
+            detected_emotion = emotion_match.group(1)
+            # Strip tag emosi dari respons yang ditampilkan ke user
+            result["response"] = result["response"][emotion_match.end():].strip()
+        result["detected_emotion"] = detected_emotion
+    
     # Jika voice_enabled, buat audio dari respon menggunakan Qwen3-TTS
     if data.voice_enabled and result.get("status") == "success":
         try:
@@ -2450,7 +2587,7 @@ async def jarvis_chat(data: JarvisChatRequest):
             # Hapus JSON/tool call format dari respon jika ada
             clean_text = re.sub(r'\{.*?\}', '', result["response"]).strip()
             if clean_text:
-                audio_bytes = generate_voice_bocchi(clean_text, "Neutral")
+                audio_bytes = generate_voice_bocchi(clean_text, detected_emotion)
                 if audio_bytes:
                     audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
                     result["audio_base64"] = audio_b64
@@ -2492,10 +2629,43 @@ async def jarvis_clear_conversation():
     """Clear conversation history (STM reset)."""
     return jarvis.clear_conversation()
 
+@app.get("/api/jarvis/delegations")
+async def get_jarvis_delegations():
+    """Get swarm delegation logs — siapa mendelegasikan apa ke siapa."""
+    return {"delegations": agent_logger.get_delegation_logs()}
+
 @app.get("/api/jarvis/model-info")
 async def get_jarvis_active_model():
     """Get info model aktif saat ini."""
     return jarvis.get_active_model_info()
+
+# ============================================================
+# CODE INDEXER & SEARCH API
+# ============================================================
+
+class CodeIndexRequest(BaseModel):
+    directory: str = "."
+    force: bool = False
+
+@app.post("/api/code/index")
+async def code_index(data: CodeIndexRequest):
+    """Index codebase untuk semantic search."""
+    try:
+        from code_indexer import code_indexer
+        result = code_indexer.index_directory(data.directory, force=data.force)
+        return {"status": "ok", "data": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/code/search")
+async def code_search(q: str, top_k: int = 5):
+    """Search codebase menggunakan semantic search."""
+    try:
+        from code_indexer import code_indexer
+        results = code_indexer.search_code(q, top_k=top_k)
+        return {"status": "ok", "results": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 class JarvisMemoryCreateRequest(BaseModel):
     text: str
@@ -2774,6 +2944,27 @@ async def get_tasks():
         print(f"[TASKS ERROR] {e}")
         return {"tasks": []}
 
+
+class CoWriterRequest(BaseModel):
+    context: str
+
+@app.post("/api/cowriter/suggest")
+async def suggest_cowriter(req: CoWriterRequest):
+    try:
+        from agent_tools import _call_llm_with_fallback, EVOLVE_MODEL_CHAIN
+        system_prompt = "You are an AI Co-Writer. Analyze the provided context and suggest a brilliant 1-2 sentence addition or continuation. Return ONLY the suggested text without any quotes or preamble."
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Context: {req.context}"}
+        ]
+        
+        response_text = _call_llm_with_fallback(messages=messages, model_chain=EVOLVE_MODEL_CHAIN)
+        return {"suggestion": response_text.strip()}
+    except Exception as e:
+        print(f"[API] Error in cowriter suggest: {e}")
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/tasks")
 async def save_tasks(data: TaskList):
     try:
@@ -2913,6 +3104,185 @@ async def call_mcp_server_tool(name: str, req: CallMcpToolRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# ============================================================
+# YOUTUBE + QWEN3-TTS FEATURES
+# ============================================================
+
+from youtube_transcript_api import YouTubeTranscriptApi
+import yt_dlp
+
+class YoutubeUrlRequest(BaseModel):
+    url: str
+
+class YoutubeDailyBriefingRequest(BaseModel):
+    channels: List[str] = ["https://www.youtube.com/@theAIsearch"]
+
+def extract_video_id(url: str):
+    # match patterns like https://www.youtube.com/watch?v=VIDEO_ID or https://youtu.be/VIDEO_ID
+    match = re.search(r"(?:v=|youtu\.be\/)([^&?]+)", url)
+    return match.group(1) if match else None
+
+def get_latest_video_from_channel(channel_url: str):
+    ydl_opts = {
+        'extract_flat': True,
+        'playlist_items': '1', 
+        'quiet': True
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(channel_url, download=False)
+        if 'entries' in info and len(info['entries']) > 0:
+            return info['entries'][0]['id']
+    return None
+
+@app.post("/api/notebook/podcast")
+async def generate_notebook_podcast(req: YoutubeUrlRequest):
+    # This acts as the NotebookLM podcast generator
+    # For now it takes a single URL, but can easily be extended to RAG search
+    video_id = extract_video_id(req.url)
+    if not video_id:
+        raise HTTPException(status_code=400, detail="URL YouTube tidak valid")
+    
+    try:
+        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['id', 'en'])
+        full_text = " ".join([t['text'] for t in transcript_list])
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Gagal mengambil transkrip: {str(e)}")
+        
+    system_prompt = "Kamu adalah penulis naskah podcast 'Audio Overview' ala NotebookLM. Buat dialog interaktif dan seru antara 2 orang (Host 1 sebagai penanya penasaran, Host 2 sebagai ahli) berdasarkan materi berikut. Gunakan bahasa gaul Indonesia. Jangan gunakan label nama (seperti Host 1:), cukup buat mengalir secara alami seolah-olah 2 orang sedang ngobrol di satu script."
+    try:
+        os_tools.ensure_ollama_running()
+        payload = {
+            "model": os_tools.MODEL_NAME,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Materi: {full_text[:6000]}"}
+            ],
+            "stream": False
+        }
+        resp = requests.post(os_tools.OLLAMA_URL, json=payload, timeout=90)
+        resp.raise_for_status()
+        script = resp.json()['message']['content']
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gagal merangkum script: {str(e)}")
+        
+    try:
+        tts_engine = get_tts_model("chat")
+        if not tts_engine or tts_engine == "fallback":
+            raise Exception("Qwen3-TTS engine tidak tersedia")
+            
+        ref_audio = REFERENSI_SUARA if os.path.exists(REFERENSI_SUARA) else None
+        teks_untuk_tts = sanitize_for_tts(script)
+        # Using the same voice for both, or we could split the text if we had multiple reference voices
+        wavs, sample_rate = tts_engine.generate_voice_clone(
+            text=teks_untuk_tts,
+            ref_audio=ref_audio,
+            x_vector_only_mode=True,
+            language="Auto"
+        )
+        
+        with io.BytesIO() as wav_io:
+            sf.write(wav_io, wavs[0], sample_rate, format='wav')
+            wav_io.seek(0)
+            audio_base64 = base64.b64encode(wav_io.read()).decode("utf-8")
+            
+        return {"script": script, "audio_base64": audio_base64}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"TTS Gagal: {str(e)}")
+
+
+@app.post("/api/youtube/rag-ingest")
+async def ingest_youtube_rag(req: YoutubeUrlRequest):
+    video_id = extract_video_id(req.url)
+    if not video_id:
+        raise HTTPException(status_code=400, detail="URL YouTube tidak valid")
+    
+    try:
+        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['id', 'en'])
+        full_text = " ".join([t['text'] for t in transcript_list])
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Gagal mengambil transkrip: {str(e)}")
+        
+    chunks = potong_teks_untuk_story(full_text, chunk_size=800)
+    
+    if not chunks:
+        raise HTTPException(status_code=400, detail="Transkrip kosong.")
+        
+    try:
+        embeddings = memory.create_embedding(chunks)
+        for chunk, emb in zip(chunks, embeddings):
+            nama_sumber = f"YouTube_{video_id}"
+            memory.add_to_long_term_memory(nama_sumber, chunk, emb)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gagal menyimpan ke memory: {str(e)}")
+        
+    return {"message": f"Berhasil memasukkan {len(chunks)} bagian transkrip ke dalam RAG Memory."}
+
+
+@app.post("/api/system/daily-briefing")
+async def daily_youtube_briefing(req: YoutubeDailyBriefingRequest):
+    all_texts = []
+    
+    for channel in req.channels:
+        try:
+            video_id = get_latest_video_from_channel(channel)
+            if video_id:
+                transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['id', 'en'])
+                text = " ".join([t['text'] for t in transcript_list])
+                all_texts.append(f"Dari channel {channel}:\n" + text[:2000])
+        except Exception as e:
+            print(f"[WARNING] Gagal mengambil briefing dari {channel}: {e}")
+            continue
+            
+    if not all_texts:
+        raise HTTPException(status_code=400, detail="Tidak ada transkrip yang berhasil diambil.")
+        
+    combined_text = "\n\n".join(all_texts)
+    
+    system_prompt = "Kamu adalah pembaca berita pagi AI. Ringkas poin-poin utama dari transkrip YouTube berikut menjadi laporan berita harian yang padat, jelas, dan bersemangat dalam bahasa Indonesia."
+    try:
+        os_tools.ensure_ollama_running()
+        payload = {
+            "model": os_tools.MODEL_NAME,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Transkrips: {combined_text}"}
+            ],
+            "stream": False
+        }
+        resp = requests.post(os_tools.OLLAMA_URL, json=payload, timeout=120)
+        resp.raise_for_status()
+        script = resp.json()['message']['content']
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gagal merangkum berita: {str(e)}")
+        
+    try:
+        tts_engine = get_tts_model("chat")
+        if not tts_engine or tts_engine == "fallback":
+            raise Exception("Qwen3-TTS engine tidak tersedia")
+            
+        ref_audio = REFERENSI_SUARA if os.path.exists(REFERENSI_SUARA) else None
+        teks_untuk_tts = sanitize_for_tts(script)
+        wavs, sample_rate = tts_engine.generate_voice_clone(
+            text=teks_untuk_tts,
+            ref_audio=ref_audio,
+            x_vector_only_mode=True,
+            language="Auto"
+        )
+        
+        with io.BytesIO() as wav_io:
+            sf.write(wav_io, wavs[0], sample_rate, format='wav')
+            wav_io.seek(0)
+            audio_base64 = base64.b64encode(wav_io.read()).decode("utf-8")
+            
+        return {"script": script, "audio_base64": audio_base64}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"TTS Gagal: {str(e)}")
+
+
+app.include_router(simulation_router)
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    # Dimatikan auto-reload karena menyebabkan Out of Memory / Paging File (WinError 1455) 
+    # saat mencoba menspawn proses baru dengan memori VRAM yang padat
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)

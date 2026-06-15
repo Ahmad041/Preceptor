@@ -242,13 +242,31 @@ def answer_techdoc_question(session_id: str, answer: str) -> dict:
     sess["step"] = step + 1
     total = len(questions)
     
-    if sess["step"] >= total:
+    if sess["step"] == total:
+        # Superpowers Workflow: Propose Implementation Plan / Spec before execution
+        plan_text = f"**[SUPERPOWERS - Implementation Plan]**\nSaya telah menyusun spesifikasi dokumen berdasarkan sesi brainstorming kita:\n- Proyek: {sess['data'].get('nama_proyek')}\n- Tujuan: {sess['data'].get('tujuan_proyek')}\n- Entitas: {sess['data'].get('entitas')}\n- Aktor: {sess['data'].get('aktor')}\n- Dokumen: {sess['data'].get('jenis_dok_label')}\n\nApakah Anda menyetujui spesifikasi dan rencana implementasi ini? (Ketik 'Ya' untuk lanjut atau berikan revisi)"
+        return {
+            "session_id": session_id,
+            "question": plan_text,
+            "options": ["Ya, Lanjutkan Eksekusi"],
+            "done": False,
+            "progress": 95
+        }
+        
+    if sess["step"] > total:
+        # Approval answer received
         sess["status"] = "ready"
+        if "ya" not in answer.lower() and "lanjut" not in answer.lower() and "yes" not in answer.lower():
+            sess["data"]["revisi_plan"] = answer.strip()
+            msg = "Revisi spesifikasi diterima. Mengeksekusi generasi dokumen berdasarkan rencana yang diperbarui..."
+        else:
+            msg = "Spesifikasi disetujui! Mengeksekusi generasi dokumen..."
+            
         return {
             "session_id": session_id,
             "done": True,
             "ready_to_generate": True,
-            "message": "Informasi proyek sudah lengkap! Mulai meng-generate dokumen...",
+            "message": msg,
             "summary": sess["data"],
             "progress": 100
         }

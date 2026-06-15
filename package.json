@@ -1,6 +1,10 @@
 {
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.81",
+    "@ai-sdk/mcp": "^1.0.46",
+    "@composio/core": "^0.10.0",
     "@pixiv/three-vrm": "^3.5.1",
+    "ai": "^6.0.196",
     "three": "^0.183.2"
   }
 }

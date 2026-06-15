@@ -1,0 +1,57 @@
+/* BootScreen Animations - Self-contained, no Tailwind dependency */
+
+.boot-pulse-ring {
+    animation: boot-pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+
+@keyframes boot-pulse-ring {
+    0% { transform: scale(0.8); opacity: 0.8; }
+    100% { transform: scale(1.5); opacity: 0; }
+}
+
+.boot-text-flicker {
+    animation: boot-flicker 4s linear infinite;
+}
+
+@keyframes boot-flicker {
+    0%, 19.999%, 22%, 62.999%, 64%, 64.999%, 70%, 100% { opacity: 1; }
+    20%, 21.999%, 63%, 63.999%, 65%, 69.999% { opacity: 0.4; }
+}
+
+.boot-icon-pulse {
+    animation: boot-icon-pulse 2s ease-in-out infinite;
+}
+
+@keyframes boot-icon-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+.boot-orbit {
+    animation: boot-spin 10s linear infinite;
+}
+
+@keyframes boot-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.boot-ping {
+    animation: boot-ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes boot-ping {
+    75%, 100% {
+        transform: scale(2);
+        opacity: 0;
+    }
+}
+
+.boot-progress-pulse {
+    animation: boot-progress-pulse 2s ease-in-out infinite;
+}
+
+@keyframes boot-progress-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}

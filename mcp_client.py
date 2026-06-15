@@ -43,7 +43,13 @@ class MCPClient:
                 if not command:
                     raise ValueError(f"Command is required for stdio transport in server {self.name}")
                 
-                params = StdioServerParameters(command=command, args=args, env=env)
+                full_env = os.environ.copy()
+                if env:
+                    # Convert all values to string to avoid Popen errors
+                    for k, v in env.items():
+                        full_env[k] = str(v)
+                
+                params = StdioServerParameters(command=command, args=args, env=full_env)
                 transport_ctx = stdio_client(params)
                 transport = await self.exit_stack.enter_async_context(transport_ctx)
                 session_ctx = mcp.client.session.ClientSession(transport[0], transport[1])
@@ -125,10 +131,10 @@ class MCPClientRegistry:
         else:
             # Default servers
             self.servers = {
-                "openbnb": {
-                    "transport": "sse",
-                    "url": "https://mcp.openbnb.ai/mcp"
-                }
+                # "openbnb": {
+                #     "transport": "sse",
+                #     "url": "https://mcp.openbnb.ai/mcp"
+                # }
             }
             self.save_servers()
 

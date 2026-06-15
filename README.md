@@ -65,6 +65,12 @@ graph LR
 *   **Long-Term Synthesis**: Mesin pencarian mengagregasi ratusan halaman web, menyintesisnya, dan menyimpan laporan riset permanen di ChromaDB (Sistem Memori).
 *   **MCP Integration**: Dukungan *Model Context Protocol* untuk mengekstensi kemampuan baca basis pengetahuan dan alat eksternal (Pollyhaven, Sketchfab, API internal) ke agen secara modular.
 
+### 🧠 7. Enhanced UI & NotebookLM Integration
+*   **NotebookLM Connect**: Integrasi *workspace* riset dengan Google NotebookLM langsung di dalam *Company Mode*.
+*   **Agent Direct Messaging**: Sistem perpesanan privat (*Direct Message*) untuk berkomunikasi secara 1-on-1 dengan agen-agen spesifik secara efisien.
+*   **3D Knowledge Graph**: Representasi visual interaktif dari arsip memori sistem dalam bentuk relasi graf 3D yang dinamis.
+*   **Custom Background Shaders**: Estetika antarmuka yang lebih imersif menggunakan *WebGL shaders* kustom interaktif di latar belakang aplikasi.
+
 ---
 
 ## 🛠️ Teknologi yang Digunakan
@@ -161,6 +167,7 @@ Akses aplikasi langsung dari browser di alamat `http://localhost:5173`.
 - [x] **AlphaEvolve System** siklus optimasi mandiri kode Python secara otonom dengan fitur *hot-module reload*.
 - [x] **AI Co-Scientist (R&D Division)** antrean riset otonom terintegrasi dengan *Company Mode*.
 - [x] **MCP Protocol Extensions** dukungan integrasi Model Context Protocol.
+- [x] **Agent Direct Messaging & NotebookLM** produktivitas komunikasi agen dan riset tingkat lanjut.
 - [ ] **Migrasi ke Aplikasi Desktop Native** penuh menggunakan pembungkus **Electron + PyInstaller** (Lihat [Rencana Implementasi Electron](file:///C:/Users/ahamd/.gemini/antigravity/brain/647951e5-8939-4a7c-987a-6933958a79f7/implementation_plan.md) untuk detailnya).
 - [ ] **Unified Installer Ringan** yang dibekali manager unduhan model otomatis (*Lazy Download Model UI*).
 

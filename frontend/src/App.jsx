@@ -9,10 +9,11 @@ import StoryPlayer from './StoryPlayer'
 import StoryLibrary from './StoryLibrary'
 import QuizStory from './QuizStory'
 import CompanyMode from './company/CompanyMode'
+import BootScreen from './BootScreen'
 import './App.css'
 
 function App() {
-  const [screen, setScreen] = useState('menu')
+  const [screen, setScreen] = useState('boot')
   const [userProfile, setUserProfile] = useState({ nama: '', hubungan: '' })
   
   const [pesan, setPesan] = useState('') 
@@ -702,6 +703,10 @@ function App() {
 
   if (screen === 'company') {
     return <CompanyMode onBack={() => setScreen('menu')} />;
+  }
+
+  if (screen === 'boot') {
+    return <BootScreen onComplete={() => setScreen('menu')} />;
   }
 
   return (

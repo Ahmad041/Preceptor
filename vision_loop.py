@@ -27,15 +27,17 @@ from PIL import ImageGrab
 # VISION ENGINE — Background Screenshot Analysis (Ollama Local)
 # ============================================================
 
-_VISION_PROMPT = """Analyze this desktop screenshot. Respond in JSON format only:
+_VISION_PROMPT = """Analyze this desktop screenshot. Follow a strict Verification/Review Loop before drawing conclusions. Respond in JSON format only:
 {
-    "description": "Brief 1-2 sentence description of what's visible on screen",
+    "hypothesis": "Initial thought on what is happening on the screen",
+    "verification": "Critical review of your hypothesis based on actual UI elements and text visible",
+    "description": "Validated 1-2 sentence description of the main activity",
     "active_window": "Name of the active/focused application window",
     "elements": ["list", "of", "key", "UI", "elements", "visible"],
     "text_content": "Any readable text visible on screen (OCR)",
-    "actionable": ["suggested actions based on context"]
+    "actionable": ["suggested actions based on validated context"]
 }
-Be concise. Focus on the main activity happening on screen."""
+Be concise but rigorous in your verification. Focus on the main activity happening on screen."""
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
@@ -84,6 +86,8 @@ class VisionEngine:
         self._interval = 30  # Default 30 detik
         self._current_analysis = {
             "timestamp": None,
+            "hypothesis": "",
+            "verification": "",
             "description": "Vision engine belum aktif.",
             "elements": [],
             "active_window": None,
@@ -205,6 +209,8 @@ class VisionEngine:
             if time.time() < self._cooldown_until:
                 remaining = int(self._cooldown_until - time.time())
                 analysis = {
+                    "hypothesis": "",
+                    "verification": "",
                     "description": f"⏳ Rate limit cooldown — menunggu {remaining}s.",
                     "elements": [],
                     "active_window": "Cooldown",
@@ -220,6 +226,8 @@ class VisionEngine:
             with self._lock:
                 self._current_analysis = {
                     "timestamp": datetime.now().isoformat(),
+                    "hypothesis": analysis.get("hypothesis", ""),
+                    "verification": analysis.get("verification", ""),
                     "description": analysis.get("description", "Analisis gagal"),
                     "elements": analysis.get("elements", []),
                     "active_window": analysis.get("active_window", "Unknown"),
@@ -282,6 +290,8 @@ class VisionEngine:
                 return result, "openrouter"
         
         return {
+            "hypothesis": "",
+            "verification": "",
             "description": "❌ Semua provider vision gagal.",
             "elements": [],
             "active_window": "Unknown",
@@ -440,6 +450,8 @@ class VisionEngine:
         except Exception:
             # If JSON parsing fails, return text as description
             return {
+                "hypothesis": "",
+                "verification": "",
                 "description": text[:300] if text else "Parsing gagal",
                 "elements": [],
                 "active_window": "Unknown",

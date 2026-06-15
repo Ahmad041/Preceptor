@@ -38,41 +38,84 @@ def transcribe_audio_bytes(audio_bytes: bytes) -> str:
         if os.path.exists(temp_path):
             os.remove(temp_path)
 
+# Emotion-to-reference-audio mapping
+# Setiap emosi dipetakan ke file .wav referensi yang memiliki intonasi sesuai.
+# Jika file tidak ada, fallback ke REFERENSI_SUARA default.
+EMOTION_MAP = {
+    "neutral": "bocchi_referensi.wav",
+    "happy": "bocchi_happy.wav",
+    "sad": "bocchi_sad.wav",
+    "angry": "bocchi_angry.wav",
+    "excited": "bocchi_happy.wav",   # fallback ke happy
+    "calm": "bocchi_referensi.wav",  # fallback ke neutral
+    "serious": "bocchi_angry.wav",   # fallback ke angry (tegas)
+    "shy": "bocchi_referensi.wav",   # fallback ke neutral (pemalu = netral lembut)
+}
+
+def _resolve_emotion_audio(emotion: str) -> str:
+    """Resolve emotion string ke path file audio referensi yang tersedia."""
+    emotion_key = emotion.lower().strip()
+    
+    # Coba file dari EMOTION_MAP
+    candidate = EMOTION_MAP.get(emotion_key)
+    if candidate and os.path.exists(candidate):
+        return candidate
+    
+    # Coba file konvensi bocchi_{emotion}.wav
+    direct_file = f"bocchi_{emotion_key}.wav"
+    if os.path.exists(direct_file):
+        return direct_file
+    
+    # Fallback ke file referensi default
+    if os.path.exists(REFERENSI_SUARA):
+        print(f"[TTS] File emosi '{emotion_key}' tidak ditemukan, menggunakan referensi default: {REFERENSI_SUARA}")
+        return REFERENSI_SUARA
+    
+    print(f"[WARNING] Tidak ada file referensi suara yang ditemukan (emosi: {emotion_key})!")
+    return None
+
+
 def generate_voice_bocchi(text: str, emotion: str = "Neutral") -> bytes:
-    """Generate audio WAV bytes dari teks menggunakan Qwen3-TTS."""
+    """Generate audio WAV bytes dari teks menggunakan Qwen3-TTS dengan dukungan emosi."""
+    import time
     from main import QWEN_TTS_MODEL  # Import dynamically to share instance
+    
+    start_time = time.time()
     
     if not QWEN_TTS_MODEL or QWEN_TTS_MODEL == "fallback":
         print("[TTS] Qwen3-TTS tidak tersedia, menggunakan fallback (no audio)")
         return b""
         
-    # Pilih file referensi berdasarkan emosi, fallback ke default jika tidak ada
-    emotion_file = f"bocchi_{emotion.lower()}.wav"
-    if os.path.exists(emotion_file):
-        ref_audio = emotion_file
-    elif os.path.exists(REFERENSI_SUARA):
-        ref_audio = REFERENSI_SUARA
-    else:
-        ref_audio = None
-        
+    # Resolve file referensi berdasarkan emosi
+    ref_audio = _resolve_emotion_audio(emotion)
+    
     if not ref_audio:
-        print(f"[WARNING] File referensi suara tidak ditemukan untuk emosi {emotion} atau default!")
+        print(f"[WARNING] Tidak bisa generate TTS: tidak ada file referensi suara!")
+        return b""
         
     try:
         from main import sanitize_for_tts
         clean_text = sanitize_for_tts(text)
-        print(f"[TTS] Menghasilkan suara Voice Clone: '{clean_text}' dengan emosi {emotion} (File: {ref_audio})")
-        wavs, sample_rate = QWEN_TTS_MODEL.generate_voice_clone(
-            text=clean_text,
-            ref_audio=ref_audio,
-            x_vector_only_mode=True,
-            language="Auto",
-        )
+        print(f"[TTS] Menghasilkan suara Voice Clone: '{clean_text[:80]}...' dengan emosi {emotion} (File: {ref_audio})")
+        
+        with torch.inference_mode():
+            wavs, sample_rate = QWEN_TTS_MODEL.generate_voice_clone(
+                text=clean_text,
+                ref_audio=ref_audio,
+                x_vector_only_mode=True,
+                language="Auto",
+            )
         
         # Save to buffer
         buffer = BytesIO()
         sf.write(buffer, wavs[0], sample_rate, format='WAV')
+        
+        elapsed = time.time() - start_time
+        audio_duration = len(wavs[0]) / sample_rate
+        print(f"[TTS] Selesai dalam {elapsed:.2f}s | Audio: {audio_duration:.1f}s | RTF: {elapsed/audio_duration:.2f}x")
+        
         return buffer.getvalue()
     except Exception as e:
-        print(f"[WARNING] Gagal generate TTS: {e}")
+        elapsed = time.time() - start_time
+        print(f"[WARNING] Gagal generate TTS ({elapsed:.2f}s): {e}")
         return b""

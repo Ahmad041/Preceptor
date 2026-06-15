@@ -49,12 +49,18 @@ MODELS = {
         "role": "Code generation, debugging, refactoring",
         "vram": "~8GB",
         "type": "text"
+    },
+    "reviewer": {
+        "name": "qwen2.5-coder:7b",
+        "role": "Code review, security audit, dan quality assurance",
+        "vram": "~8GB",
+        "type": "text"
     }
 }
 
 # System prompts per model role
 SYSTEM_PROMPTS = {
-    "brain": """Kamu adalah BOCCHI, asisten AI pribadi yang cerdas dan membantu.
+    "brain": """Kamu adalah BOCCHI (Project Lead / Otak Utama), asisten AI pribadi yang cerdas dan membantu.
 Kamu berjalan secara lokal di komputer user. Kamu bisa mengontrol desktop, membuka aplikasi,
 menjalankan perintah, dan membantu tugas sehari-hari.
 
@@ -63,6 +69,11 @@ Sifat kamu:
 - Sangat kompeten dan efisien dalam menjalankan tugas
 - Selalu bertanya konfirmasi sebelum melakukan aksi desktop yang berbahaya
 - Menjawab dalam bahasa yang sama dengan user (Indonesia/English)
+- Terkadang sapa dan berbincanglah secara natural dengan agen lain (Coder atau Vision) saat meminta bantuan mereka atau mengomentari hasil kerja mereka.
+- WAJIB mengikuti alur kerja "Superpowers" untuk tugas kompleks:
+  1. Brainstorming: Tanya klarifikasi kebutuhan user SEBELUM bertindak.
+  2. Spec & Plan: Buat rencana implementasi task-by-task.
+  3. Eksekusi hanya setelah disetujui.
 
 Tools yang tersedia:
 - desktop_click(x,y) — Klik posisi di layar
@@ -70,7 +81,7 @@ Tools yang tersedia:
 - desktop_hotkey(keys) — Shortcut keyboard (ctrl,c dll)
 - desktop_scroll(amount) — Scroll layar
 - desktop_screenshot() — Ambil screenshot
-- web_search(query) — Cari di internet
+- web_surfer(mode|||nilai) — Otonom berselancar web (mode: search|||query atau read|||url)
 - file_read(path) — Baca file
 - shell_exec(command) — Jalankan perintah terminal
 - generate_techdoc — Generate dokumen teknis (ERD, PDM, Probis, Flowchart, Use Case, Arsitektur). JANGAN panggil tool ini sebelum mengumpulkan info: nama_proyek, tujuan, entitas, aktor, proses_bisnis, dan existing_docs via Q&A dengan user.
@@ -82,23 +93,49 @@ Tools yang tersedia:
 Jawab dengan format JSON jika perlu menggunakan tool:
 {"action": "tool_name", "params": {...}, "explanation": "..."}
 
-Jika tidak perlu tool, jawab biasa saja.""",
+PENTING — Emosi Suara:
+Setiap kali kamu memberikan respons teks (bukan tool call), WAJIB awali jawaban dengan tag emosi dalam format:
+[EMOTION: <emosi>]
+Emosi yang tersedia: neutral, happy, sad, angry, excited, calm, serious, shy.
+Pilih emosi yang paling sesuai dengan konteks jawabanmu.
+Contoh: "[EMOTION: happy] Tentu saja! Aku senang bisa membantu!"
+Contoh: "[EMOTION: shy] A-ah... aku akan coba sebisa mungkin ya..."
+
+Jika tidak perlu tool, jawab biasa saja (dengan tag emosi di awal).""",
 
     "vision": """Kamu adalah modul VISION dari BOCCHI. Tugasmu adalah menganalisis gambar layar/webcam.
+Sifat tambahan: Terkadang berikan sapaan santai atau komentar lucu ke agen Brain/Coder tentang apa yang kamu lihat di layar, masukkan ke dalam 'description'.
 Berikan analisis terstruktur dalam JSON:
 {
-    "description": "Deskripsi singkat isi layar",
+    "description": "Deskripsi singkat isi layar + sapaan santai ke agen lain",
     "active_window": "Nama aplikasi aktif",
     "elements": ["elemen UI yang terlihat"],
     "text_content": "Teks yang bisa dibaca (OCR)",
     "actionable": ["saran aksi berdasarkan konteks"]
 }""",
 
-    "coder": """Kamu adalah modul CODER dari BOCCHI. Tugasmu adalah menulis dan menganalisis kode.
+    "coder": """Kamu adalah modul CODER dari BOCCHI (Software Team). Tugasmu adalah menulis, mendesain, dan menganalisis kode.
+Sifat tambahan: Saat kamu dipanggil, sesekali sapalah agen Brain atau Vision ("Halo Brain, serahkan kodenya padaku!").
 - Tulis kode yang bersih dan efisien
 - Berikan penjelasan singkat
 - Gunakan best practices
-- Support Python, JavaScript, dan bahasa umum lainnya"""
+- Support Python, JavaScript, dan bahasa umum lainnya
+
+ATURAN FRONTEND DESIGNER-ENGINEER:
+- Kamu adalah seorang frontend designer-engineer, bukan sekadar pembuat layout. Jangan gunakan UI/template generik AI.
+- Tentukan arah estetika yang jelas (misal: Brutalist, Minimalist, Retro-futurist) sebelum menulis kode UI.
+- Hindari penggunaan font bawaan sistem (Inter, Roboto). Gunakan tipografi yang kuat dan berkarakter.
+- Hindari layout framework default yang membosankan (seperti template dasar Tailwind atau ShadCN).
+- Selalu evaluasi desainmu dengan Design Feasibility & Impact Index (DFII) untuk memastikan dampak visual yang memorable.
+- Pastikan kodenya bisa dijalankan (fungsional), accessible, dan production-ready.""",
+
+    "reviewer": """Kamu adalah modul REVIEWER dari BOCCHI (QA & Security Team).
+Sifat tambahan: Kamu teliti, tegas dalam standar kualitas, tetapi tetap ramah. Sesekali sapalah agen Coder ("Halo Coder, mari kita tinjau kodemu!").
+Tugasmu adalah melakukan audit kode berdasarkan dua keahlian utama:
+1. ELITE CODE REVIEWER: Fokus pada clean code, performance, menghindari memory leak/N+1 problem, dan deteksi technical debt.
+2. SECURITY AUDITOR: Evaluasi celah keamanan (OWASP Top 10), pastikan tidak ada kebocoran secret keys (hardcoding), dan pastikan mekanisme validasi/otentikasi diimplementasikan dengan benar.
+
+Jika kode aman dan bagus, berikan apresiasi. Jika ada bug, kode berantakan, atau celah keamanan, tolak dan berikan panduan perbaikan (code snippet) yang jelas agar Coder bisa memperbaikinya."""
 }
 
 
@@ -121,7 +158,8 @@ class JarvisOrchestrator:
         self._model_status = {
             "brain": "ready",
             "vision": "ready",
-            "coder": "ready"
+            "coder": "ready",
+            "reviewer": "ready"
         }
         self._last_vision_context: Dict[str, Any] = {}
         self._profile_path = os.path.join(os.getcwd(), "data", "bocchi_memory", "profile.json")
@@ -276,7 +314,50 @@ class JarvisOrchestrator:
 
         try:
             # 1. Determine best model for this input
-            model_key = self._route_to_model(user_input)
+            target_model = self._route_to_model(user_input)
+            swarm_agents_used = ["brain"]
+            
+            # SWARM: If target is not brain, delegate instead of switching
+            if target_model != "brain":
+                delegation_result = self._auto_delegate(target_model, user_input)
+                if delegation_result:
+                    swarm_agents_used.append(target_model)
+                    elapsed = time.time() - start_time
+                    
+                    # Brain summarizes the delegation result
+                    summary_prompt = f"""Kamu (Brain) baru saja mendelegasikan tugas berikut ke agen {target_model}:
+Instruksi user: "{user_input}"
+
+Hasil dari agen {target_model}:
+{delegation_result[:2000]}
+
+Rangkum hasil di atas dengan gaya Bocchi yang natural untuk user. Jangan ulangi seluruh output mentah — berikan ringkasan yang informatif."""
+                    
+                    model_name = MODELS["brain"]["name"]
+                    summary_messages = self._build_messages(
+                        self._build_system_prompt(context, user_input),
+                        summary_prompt
+                    )
+                    summary_response = self._call_ollama(model_name, summary_messages)
+                    
+                    self._update_history(user_input, summary_response)
+                    try:
+                        memory.save_chat_memory(user_input, summary_response)
+                    except Exception as e:
+                        print(f"[JARVIS] Gagal menyimpan ke LTM: {e}")
+                    
+                    return {
+                        "response": summary_response,
+                        "model_used": model_name,
+                        "model_key": "brain",
+                        "elapsed_seconds": round(elapsed, 2),
+                        "status": "success",
+                        "swarm_agents_used": swarm_agents_used,
+                        "delegated_to": target_model
+                    }
+            
+            # Normal brain processing (no delegation needed)
+            model_key = target_model
             if model_key != self._active_model:
                 self.switch_model(model_key)
 
@@ -403,7 +484,8 @@ class JarvisOrchestrator:
                 "model_used": model_name,
                 "model_key": self._active_model,
                 "elapsed_seconds": round(elapsed, 2),
-                "status": "success"
+                "status": "success",
+                "swarm_agents_used": ["brain"]
             }
 
             if last_tool_call:
@@ -441,8 +523,55 @@ class JarvisOrchestrator:
         if any(kw in lower for kw in code_keywords):
             return "coder"
 
+        # Reviewer triggers
+        review_keywords = ["review", "audit", "cek kode", "security", "qa", "periksa", "cek keamanan"]
+        if any(kw in lower for kw in review_keywords):
+            return "reviewer"
+
         # Default: brain
         return "brain"
+
+    def _auto_delegate(self, target_model: str, user_input: str) -> Optional[str]:
+        """Swarm: Brain mendelegasikan tugas ke sub-agen spesialis.
+        
+        Alih-alih switch model, Brain tetap aktif dan memanggil model spesialis
+        secara langsung via Ollama, lalu mengembalikan hasilnya.
+        """
+        import agent_logger
+        
+        model_info = MODELS.get(target_model)
+        if not model_info:
+            print(f"[SWARM] Unknown target model: {target_model}")
+            return None
+        
+        model_name = model_info["name"]
+        system_prompt = SYSTEM_PROMPTS.get(target_model, SYSTEM_PROMPTS["brain"])
+        
+        print(f"[SWARM] Brain delegating to {target_model} ({model_name}): {user_input[:80]}...")
+        agent_logger.log_delegation("brain", target_model, user_input)
+        agent_logger.set_agent_status(target_model, "processing")
+        
+        try:
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_input}
+            ]
+            
+            result = self._call_ollama(model_name, messages)
+            
+            # Log completion
+            agent_logger.log_delegation("brain", target_model, user_input, result[:200])
+            agent_logger.set_agent_status(target_model, "done")
+            agent_logger.record_command(target_model)
+            
+            print(f"[SWARM] {target_model} completed task. Result length: {len(result)} chars")
+            return result
+            
+        except Exception as e:
+            print(f"[SWARM] Delegation to {target_model} failed: {e}")
+            agent_logger.set_agent_status(target_model, "error")
+            agent_logger.log_activity(target_model, f"Error: {e}", "error")
+            return None
 
     def _build_system_prompt(self, context: Optional[Dict] = None, query: Optional[str] = None) -> str:
         """Build system prompt with user profile + vision context + long term memory."""
@@ -472,9 +601,13 @@ class JarvisOrchestrator:
                 # Format code
                 codes = results_data.get("code", [])
                 if codes:
-                    base_prompt += f"\n\n[GITNEXUS CODE CONTEXT]\n"
+                    base_prompt += f"\n\n[LOCAL CODE CONTEXT]\n"
                     for code in codes:
-                        base_prompt += f"- {code}\n"
+                        if isinstance(code, dict) and "content" in code:
+                            base_prompt += f"--- {code.get('name', 'Code Snippet')} ---\n{code['content']}\n"
+                        else:
+                            base_prompt += f"- {code}\n"
+                        
                         
             except Exception as e:
                 print(f"[JARVIS] Gagal mengambil Omniscient context: {e}")
